@@ -1,0 +1,377 @@
+import discord
+
+import config, re
+
+from datetime import datetime, timedelta
+from discord import app_commands, Interaction, Client, TextChannel, ui, ButtonStyle
+from discord.ext import commands
+from icecream import ic
+from logger import logger
+from typing import List
+
+#####################################################################
+# DISCORD VIEWS
+#####################################################################
+
+# Define a simple View that gives us a confirmation menu
+class Confirm(ui.View):
+	def __init__(self):
+		super().__init__(timeout=None)
+		self.value = None
+
+	# When the confirm button is pressed, set the inner value to `True` and
+	# stop the View from listening to more input.
+	# We also send the user an ephemeral message that we're confirming their choice.
+	@ui.button(label='Confirm', style=ButtonStyle.green)
+	async def confirm(self, interaction: Interaction, button: ui.Button):
+		await interaction.response.send_message("Confirmed. Removing entry from database.\n-# You don't need to do anything.", ephemeral=True, delete_after=5)
+		self.value = True
+		self.stop()
+
+	# This one is similar to the confirmation button except sets the inner value to `False`
+	@ui.button(label='Cancel', style=ButtonStyle.grey)
+	async def cancel(self, interaction: Interaction, button: ui.Button):
+		await interaction.response.send_message("Doing nothing. \n-# You don't need to do anything.", ephemeral=True, delete_after=5)
+		self.value = False
+		self.stop()
+
+class CustomBidModel(discord.ui.Modal, title='Feedback'):
+	bid_amount_input = discord.ui.TextInput(
+		label='How much do you want to bid?',
+		style=discord.TextStyle.short,
+		placeholder="(e.g. 1m, \"500,000\", 300k)",
+		required=True,
+		max_length=12,
+	)
+
+	async def on_submit(self, interaction: discord.Interaction):
+		await _place_bid(interaction, bid_amount=self.bid_amount_input.value)
+
+	async def on_error(self, interaction: discord.Interaction, error: Exception) -> None:
+		await interaction.response.send_message('Oops! Something went wrong.', ephemeral=True)
+		logger.error(f"Exception when parsing custom bid amount. {type(error)}: {error}")
+
+class BidView(ui.View):
+	def __init__(self):
+		super().__init__(timeout=None)
+
+	# TODO: make view presist. See https://github.com/Rapptz/discord.py/blob/v2.5.2/examples/views/persistent.py
+	@ui.button(label='Bid!', style=ButtonStyle.green, custom_id=f"persistent_button_bid")
+	async def bid(self, interaction: discord.Interaction, button: discord.ui.Button):
+		# await interaction.response.send_message("bidded!")
+		await _place_bid(interaction, "")
+
+	@ui.button(label="Custom Bid Amount", custom_id=f"persistent_button_custom_bid")
+	async def custom_bid(self, interaction: discord.Interaction, button: discord.ui.Button):
+		await interaction.response.send_modal(CustomBidModel())
+
+#####################################################################
+# HELPER FUNCTIONS
+#####################################################################
+def _create_auction_history_table(thread_id: int):
+	"""
+	Initialize a table for auction history
+	Args:
+		thread_id (int): the thread id
+
+	Returns:
+		None
+	"""
+	config.queue_cursor.execute(f"CREATE TABLE IF NOT EXISTS auction_history_{thread_id}(user_id, bid, current_bid, set_bid)")
+	config.queue_connection.commit()
+
+async def _place_bid(interaction: Interaction, bid_amount: str=""):
+	"""
+	Place a bid in an active auction
+	Args:
+		interaction (discord.Interaction): A discord.Interaction object. Do not create your own. Must be passed in.
+		bid_amount (str): Custom bid amount. Must be larger than the auction's increment bid and current bid combined
+
+	Returns:
+
+	"""
+	thread = await interaction.guild.fetch_channel(interaction.channel_id)
+	# checking to see if this thread has an auction in it
+	thread_ids = config.queue_cursor.execute(f"""
+							select thread_id, message_id, bid_increment, bid_current
+							from auction
+							where thread_id = {thread.id}
+						""").fetchall()
+	if len(thread_ids) == 0:
+		await interaction.response.send_message(
+			"There is no auction in this thread. Please navigate to an active auction.",
+			ephemeral=True
+		)
+		return
+
+	# parsing bid
+	_, msg_id, bid_increment, bid_current = thread_ids[0]
+	set_fix_value = False
+	if len(bid_amount) > 0:
+		# user made custom bid
+		try:
+			# try to parse bid
+			if "," in bid_amount:
+				bid_amount = bid_amount.replace(",", "")
+
+			bid_amount = number_abbreviation_parser(bid_amount)
+
+			if bid_amount <= bid_current:
+				# check to see if bid is larger than current bid
+				await interaction.response.send_message(
+					f"This amount must be larger than the current bid!\n"
+					f"You bid: `{bid_amount:,}`\n"
+					f"Current bid: `{bid_current:,}`",
+					ephemeral=True
+				)
+				return
+			elif bid_amount - bid_current < bid_increment:
+				# check to see if bid is larger than increment bid
+				await interaction.response.send_message(
+					f"This amount must be larger than the increment bid!\n"
+					f"You bid: `{bid_amount:,}`\n"
+					f"Current bid: `{bid_current:,}`\n"
+					f"--------------------------\n"
+					f"Difference: `{bid_amount - bid_current:,}`\n"
+					f"Incremental bid: `{bid_increment:,}`",
+					ephemeral=True
+				)
+				return
+
+			# user's custom bid is valid
+			set_fix_value = True
+			await interaction.response.send_message(
+				f"You have raise the bid to `{bid_amount:,}`!",
+				ephemeral=True
+			)
+		except ValueError:
+			# can't parse
+			await interaction.response.send_message(
+				f"I am having trouble understanding the value `{bid_amount}`. Please try again.",
+				ephemeral=True
+			)
+			return
+	else:
+		# user made normal bid
+		bid_amount = bid_increment
+		await interaction.response.send_message(
+			f"You have made a bid for `{bid_current + bid_amount:,}`!",
+			ephemeral=True
+		)
+	new_bid_value = bid_amount if set_fix_value else bid_current + bid_amount
+	# update master record
+	config.queue_cursor.execute(f"""
+						update auction
+						set 
+							bid_current = {new_bid_value},
+							last_bid_user_id = {interaction.user.id},
+							bid_count = bid_count + 1
+						where thread_id = {thread.id}
+					""")
+	# add to bid history
+	config.queue_cursor.execute(f"""
+						INSERT INTO auction_history_{thread.id}(user_id, bid, current_bid, set_bid)
+						VALUES (?, ?, ?, ?)
+					""", (interaction.user.id, bid_amount, new_bid_value, set_fix_value))
+	config.queue_connection.commit()
+
+	# log bid
+	logger.info(
+		f"[{interaction.channel.name}] has a bid for "
+		f"[{bid_amount:,} Gil] "
+		f"by [{interaction.user.global_name} ({interaction.user.name}, {interaction.user.id})]. "
+		f"Current total is {new_bid_value:,}."
+	)
+
+	# edit price message
+	msgs = thread.history()
+	msg_to_edit = [m async for m in msgs if m.id == msg_id]
+	if len(msg_to_edit) == 0:
+		await interaction.channel.send(
+			"Fatal error has occurred. Current price message is not found.\n"
+			"-# Paging <@1082827074189930536>"
+		)
+	await msg_to_edit[0].edit(
+		content=f"Current bid: `{new_bid_value:,}` Gil"
+	)
+
+def number_abbreviation_parser(value: str):
+	regex = re.compile(
+		r'((?P<millions>\d+?\.?\d*?)m)?'
+		r'((?P<thousands>\d+?\.?\d*?)k)?'
+		r'(?P<ones>\d*\.?\d*)?'
+	)
+	# ?((\d+?\.\d*?)k)?(\d*\.\d*?)
+	try:
+		match = regex.match(value)
+		group_dict = match.groupdict()
+		group_dict = {k: float(v) if v else 0 for k, v in group_dict.items()}
+
+		return int((group_dict['millions'] * 1000000) + (group_dict['thousands'] * 1000) + (group_dict['ones']))
+	except ValueError:
+		logger.warn(f"number abbreviation parser cannot parse input value {value}")
+		return None
+
+# table columns:
+# thread_id, message_id, end_time, bid_increment, bid_current, last_bid_user_id
+
+
+#####################################################################
+# DISCORD COMMANDS
+#####################################################################
+
+class Auction(commands.GroupCog):
+	def __init__(self, bot):
+		self.bot = bot
+
+	@app_commands.command(name="begin", description="Begin auction in this thread")
+	@app_commands.checks.has_permissions(administrator=True)
+	@app_commands.describe(
+		duration="How long does this auction last. (Example input: 1d3h)",
+		starting_bid="The initial bid",
+		bid_increment="The incremental bid",
+	)
+	async def begin(self, interaction: Interaction, duration: str, starting_bid: str, bid_increment: str):
+		channel = await interaction.guild.fetch_channel(config.AUCTION_CHANNEL_ID)
+		thread = await interaction.guild.fetch_channel(interaction.channel_id)
+
+		if config.AUCTION_STATUS_TAGS['ready'] not in [t.id for t in thread.applied_tags]:
+			# needs ready tag to get able to start
+			tag = channel.get_tag(config.AUCTION_STATUS_TAGS['ready'])
+			await interaction.response.send_message(
+				f"This thread needs the [**{tag.emoji} {tag.name}**] tag to begin auction. Please review it before marking it as ready and initializing.",
+				ephemeral=True
+			)
+			return
+		await thread.override_tags(
+			channel.get_tag(config.AUCTION_STATUS_TAGS['in_progress'])
+		)
+
+		# checking to see if this thread has an auction in it
+		thread_ids = config.queue_cursor.execute(f"""
+			select thread_id
+			from auction
+			where thread_id = {thread.id}
+		""").fetchall()
+
+		if len(thread_ids) > 0:
+			await interaction.response.send_message(
+				"This thread already has at least 1 auction registered. (It may have no cleared correctly).",
+				ephemeral=True
+			)
+			return
+
+		# parse bid values
+		starting_bid = number_abbreviation_parser(starting_bid)
+		bid_increment = number_abbreviation_parser(bid_increment)
+
+		# parse duration and set up times
+		regex = re.compile(r'((?P<days>\d+?)d)?((?P<hours>\d+?)hr?)?((?P<minutes>\d+?)m)?((?P<seconds>\d+?)s)?')
+		match = regex.match(duration)
+		duration_dict = match.groupdict()
+		duration_dict = {k: int(v) if v is not None else 0 for k, v in duration_dict.items()}
+		auction_duration = timedelta(**duration_dict)
+		auction_endtime_timestamp = int((datetime.now() + auction_duration).timestamp())
+
+		view = BidView()
+		# send messages
+		await interaction.response.send_message("Request Processing", delete_after=5)
+		await interaction.channel.send(
+			"# This auction has begun\n"
+			f"## You may bid until <t:{auction_endtime_timestamp}:f>\n"
+			f"## Auction closes <t:{auction_endtime_timestamp}:R>\n"
+			f"Bid increments: `{bid_increment:,}` Gil"
+		)
+		msg = await interaction.channel.send(
+			f"Current bid: `{starting_bid:,}` Gil",
+			view=view
+		)
+
+		# add entry to table
+		config.queue_cursor.execute(f"""
+			INSERT INTO auction (thread_id, message_id, end_time, bid_increment, bid_current, bid_count, last_bid_user_id)
+			VALUES (?, ?, ?, ?, ?, ?, ?)
+		""", (thread.id, msg.id, auction_endtime_timestamp, bid_increment, starting_bid, 0, -1))
+		config.queue_connection.commit()
+
+		# initialize history table
+		_create_auction_history_table(thread.id)
+
+		# log
+		logger.info(
+			f"[{interaction.channel.name}] has an auction started for "
+			f"[{str(auction_duration)}] until "
+			f"[{datetime.fromtimestamp(auction_endtime_timestamp).astimezone().strftime('%I:%M:%S %p %z %Z')}] set "
+			f"by [{interaction.user.global_name} ({interaction.user.name})]"
+		)
+
+	@app_commands.command(name="cancel", description="Cancel this auction")
+	@app_commands.checks.has_permissions(administrator=True)
+	async def cancel(self, interaction: Interaction, cancel_reason: str):
+		channel = await interaction.guild.fetch_channel(config.AUCTION_CHANNEL_ID)
+		thread = await interaction.guild.fetch_channel(interaction.channel_id)
+		# checking to see if this thread has an auction in it
+		thread_ids = config.queue_cursor.execute(f"""
+				select thread_id, message_id, bid_increment, bid_current
+				from auction
+				where thread_id = {thread.id}
+			""").fetchall()
+		if len(thread_ids) == 0:
+			await interaction.response.send_message(
+				"There is no auction in this thread. Please navigate to an active auction.",
+				ephemeral=True
+			)
+			return
+
+		delete_confirmation = Confirm()
+
+		discord.Message = await interaction.response.send_message(
+			"# __:warning: You are able to cancel and this auction! Do you want to continue? :warning:__\n"
+			f"-# This message will delete <t:{int((datetime.now() + timedelta(seconds=15)).timestamp())}:R>",
+			ephemeral=True,
+			delete_after=15,
+			view=delete_confirmation
+		)
+		await delete_confirmation.wait()
+
+		if delete_confirmation.value is None:
+			logger.warning("delete_confirmation has timed out.")
+		elif delete_confirmation.value:
+			# remove auction from master auction table
+			config.queue_cursor.execute(f"DELETE FROM auction WHERE thread_id = {thread.id}")
+			# remove history_table
+			config.queue_cursor.execute(f"drop table auction_history_{thread.id}")
+			config.queue_connection.commit()
+
+			# remove tags
+			await thread.override_tags()
+
+			# remove all of bot's messages in this thread
+			msgs = thread.history()
+			async for m in msgs:
+				if m.author.id == self.bot.id:
+					await m.delete()
+			await interaction.channel.send(
+				"This auction has been cancelled.\nReason: " + ("No reason given" if not cancel_reason else cancel_reason)
+			)
+		else:
+			# do nothing
+			pass
+
+	@app_commands.command(name="faq", description="Display FAQ for this Aylebot feature.")
+	async def faq(self, interaction: Interaction):
+		await interaction.response.send_message(
+			"# AyleBot Auction FAQ\n"
+			f"1. How do I participate?\n"
+			f"  - Please contact the venue's owner if you would like to be auctioned off.\n"
+			f"2. How do I bid?\n"
+			f"  - To place a bid, press the green \"Bid!\" button to raise the current bid by the increment bid.\n"
+			f"  - To place a bid larger than the current bid, press the \"Custom Bid Amount\" to raise the current bid to a desired amount.\n"
+			f"    - Note: you will need to place a bid that is at least the current bid and incremental bid combined.\n"
+			f"    - Example: using **/auction bid 3500** when the current bid is 3,000 and the incremental bid is 300 will increase the current bid to 3,500.\n"
+			f"3. What happens when the time ends?\n"
+			f"  - If you are the winner, Aylebot will DM you notifying that you are the winner. Please follow the instructino that it provide to then proceed."
+			f"4. What happens if I waited too long to redeem my auction prize?\n"
+			f"  - After 10 minutes, the auction prize will go to the next person that bids before you.\n",
+			ephemeral=True
+		)

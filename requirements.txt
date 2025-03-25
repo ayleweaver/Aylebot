@@ -1,0 +1,4 @@
+discord.py==2.5.2
+executing==2.2.0
+icecream==2.1.4
+PyYAML==6.0.2
