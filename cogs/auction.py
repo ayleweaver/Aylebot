@@ -93,7 +93,7 @@ async def _place_bid(interaction: Interaction, bid_amount: str=""):
 	thread = await interaction.guild.fetch_channel(interaction.channel_id)
 	# checking to see if this thread has an auction in it
 	thread_ids = config.queue_cursor.execute(f"""
-							select thread_id, message_id, bid_increment, bid_current
+							select thread_id, message_id, bid_increment, bid_current, last_bid_user_id
 							from auction
 							where thread_id = {thread.id}
 						""").fetchall()
@@ -105,8 +105,17 @@ async def _place_bid(interaction: Interaction, bid_amount: str=""):
 		return
 
 	# parsing bid
-	_, msg_id, bid_increment, bid_current = thread_ids[0]
+	_, msg_id, bid_increment, bid_current, last_bid_user_id = thread_ids[0]
 	set_fix_value = False
+
+	# checking to see if user was the last person who place a bid
+	if last_bid_user_id == interaction.user.id:
+		await interaction.response.send_message(
+			"You are the current bidder. You cannot double bid!",
+			ephemeral=True
+		)
+		return
+
 	if len(bid_amount) > 0:
 		# user made custom bid
 		try:
