@@ -181,6 +181,10 @@ class Bot(commands.Bot):
 
 					await trigger_event(self, event)
 					config.EVENTS_TRIGGER[event]['triggered'] = True
+			else:
+				# resets trigger at 1 am
+				if time_now.hour == 1 and time_now.minute == 0:
+					config.EVENTS_TRIGGER[event]['triggered'] = False
 
 	@queue_checker.before_loop
 	async def queue_checker_before(self):
