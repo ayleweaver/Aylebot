@@ -1,3 +1,5 @@
+import traceback
+
 import discord
 
 import config, re
@@ -35,7 +37,7 @@ class Confirm(ui.View):
 		self.value = False
 		self.stop()
 
-class CustomBidModel(discord.ui.Modal, title='Feedback'):
+class CustomBidModel(discord.ui.Modal, title='Auction Bid'):
 	bid_amount_input = discord.ui.TextInput(
 		label='How much do you want to bid?',
 		style=discord.TextStyle.short,
@@ -45,11 +47,24 @@ class CustomBidModel(discord.ui.Modal, title='Feedback'):
 	)
 
 	async def on_submit(self, interaction: discord.Interaction):
-		await _place_bid(interaction, bid_amount=self.bid_amount_input.value)
+		thread = await interaction.guild.fetch_channel(interaction.channel_id)
+		# checking to see if this thread has an auction in it
+		thread_ids = config.queue_cursor.execute(f"""
+				select thread_id, message_id, bid_increment, bid_current
+				from auction
+				where thread_id = {thread.id}
+			""").fetchall()
+		_, message_id, bid_increment, bid_current = thread_ids[0]
+
+		if number_abbreviation_parser(self.bid_amount_input.value) > bid_current * 3:
+			await interaction.response.send_message(f"You cannot bid more than 3 times the current bid!\nMaximum bid right now: `{bid_current*3:,}` Gil", ephemeral=True)
+		else:
+			await _place_bid(interaction, bid_amount=self.bid_amount_input.value)
 
 	async def on_error(self, interaction: discord.Interaction, error: Exception) -> None:
 		await interaction.response.send_message('Oops! Something went wrong.', ephemeral=True)
 		logger.error(f"Exception when parsing custom bid amount. {type(error)}: {error}")
+
 
 class BidView(ui.View):
 	def __init__(self):
@@ -64,6 +79,7 @@ class BidView(ui.View):
 	@ui.button(label="Custom Bid Amount", custom_id=f"persistent_button_custom_bid")
 	async def custom_bid(self, interaction: discord.Interaction, button: discord.ui.Button):
 		await interaction.response.send_modal(CustomBidModel())
+
 
 #####################################################################
 # HELPER FUNCTIONS
@@ -231,7 +247,7 @@ def number_abbreviation_parser(value: str):
 
 class Auction(commands.GroupCog):
 	def __init__(self, bot):
-		self.bot = bot
+		self.bot: Client = bot
 
 	@app_commands.command(name="begin", description="Begin auction in this thread")
 	@app_commands.checks.has_permissions(administrator=True)
@@ -358,7 +374,7 @@ class Auction(commands.GroupCog):
 			# remove all of bot's messages in this thread
 			msgs = thread.history()
 			async for m in msgs:
-				if m.author.id == self.bot.id:
+				if m.author.id == self.bot.user.id:
 					await m.delete()
 			await interaction.channel.send(
 				"This auction has been cancelled.\nReason: " + ("No reason given" if not cancel_reason else cancel_reason)
@@ -378,9 +394,11 @@ class Auction(commands.GroupCog):
 			f"  - To place a bid larger than the current bid, press the \"Custom Bid Amount\" to raise the current bid to a desired amount.\n"
 			f"    - Note: you will need to place a bid that is at least the current bid and incremental bid combined.\n"
 			f"    - Example: using **/auction bid 3500** when the current bid is 3,000 and the incremental bid is 300 will increase the current bid to 3,500.\n"
-			f"3. What happens when the time ends?\n"
+			f"3. What is the maximum amount of custom bid I can place at once?\n"
+			f"  - You can place up to 3 times the current bid (i.e. if the current bid is 3.5m, your custom bid cannot be higher than 10.5m)\n"
+			f"4. What happens when the time ends?\n"
 			f"  - If you are the winner, Aylebot will DM you notifying that you are the winner. Please follow the instructino that it provide to then proceed."
-			f"4. What happens if I waited too long to redeem my auction prize?\n"
+			f"5. What happens if I waited too long to redeem my auction prize?\n"
 			f"  - After 10 minutes, the auction prize will go to the next person that bids before you.\n",
 			ephemeral=True
 		)
