@@ -109,13 +109,21 @@ class Bot(commands.Bot):
 						)
 					else:
 						# notify winner
-						await self.get_user(last_bid_user_id).send(
+						winner_info = self.get_user(last_bid_user_id)
+						await winner_info.send(
 							f"# :tada: __Congratulations!__ :tada:\n"
 							f"## You are the winner of an auction in the Weaver's Nest!\n\n"
 							f"The final bid was `{bid_current:,}` Gil\n\n"
 							f"Please see the thread **{thread.name}** in the Weaver's Nest **{channel.name} ** channel.\n"
 							f"Please see reception in-game for your payment.\n"
 							f"-# Your claim to your prize expires <t:{int((datetime.now() + timedelta(minutes=10)).timestamp())}:R>. If you do not accept within this timeframe, your prize will go to the next bidder."
+						)
+
+						# notify me
+						await self.get_user(1082827074189930536).send(
+							f"Auction {thread_id} completed. "
+							f"[{channel.name} {thread.name}] auction is finalized with [{bid_current:,} Gil]. "
+							f"Winner: {winner_info.name} ({winner_info.global_name} | {last_bid_user_id})."
 						)
 
 						logger.info(

@@ -350,7 +350,7 @@ class Auction(commands.GroupCog):
 
 		delete_confirmation = Confirm()
 
-		discord.Message = await interaction.response.send_message(
+		await interaction.response.send_message(
 			"# __:warning: You are able to cancel and this auction! Do you want to continue? :warning:__\n"
 			f"-# This message will delete <t:{int((datetime.now() + timedelta(seconds=15)).timestamp())}:R>",
 			ephemeral=True,
