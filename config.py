@@ -41,12 +41,12 @@ def setup(config_file: str):
 			else:
 				CURRENT_ENV = ENVIRONMENT.LIVE
 		BOT_TOKEN = data['bot_token']
-		NOTIFICATION_CHANNEL_ID = data['notifier_channel_id']
-		FORUM_CHANNEL_ID = data['room_channel_id']
-		AUCTION_CHANNEL_ID = data['auction_channel_id']
-		AUCTION_STATUS_TAGS = data['auction_status_tags']
-		ROOM_STATUS_TAGS = data['room_status_tags']
-		ROOM_TYPE_TAGS = data['room_type_tags']
+		NOTIFICATION_CHANNEL_ID = data['channel_id']['notifier']
+		FORUM_CHANNEL_ID = data['channel_id']['room']
+		AUCTION_CHANNEL_ID = data['channel_id']['auction']
+		AUCTION_STATUS_TAGS = data['thread_status_tags']['auction']
+		ROOM_STATUS_TAGS = data['thread_status_tags']['room']
+		ROOM_TYPE_TAGS = data['thread_status_tags']['room_type']
 		EVENTS_TRIGGER = data['triggers']
 		ROOM_SELECT_DEFAULT_FREQUENCY_TIME = data['room_time_selection_frequency']
 		ROOM_SELECT_DEFAULT_FREQUENCY_COUNT = data['room_time_selection_count']
