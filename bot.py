@@ -103,8 +103,8 @@ class Bot(commands.Bot):
 							f"No Winner."
 						)
 						await self.get_user(1082827074189930536).send(
-							f"Auction {thread_id} completed. "
-							f"[{channel.name} {thread.name}] auction is finalized with [{bid_current:,} Gil]. "
+							f"Auction {thread_id} completed.\n"
+							f"[{channel.name} {thread.name}] auction is finalized with [{bid_current:,} Gil].\n"
 							f"No Winner."
 						)
 					else:
@@ -121,8 +121,8 @@ class Bot(commands.Bot):
 
 						# notify me
 						await self.get_user(1082827074189930536).send(
-							f"Auction {thread_id} completed. "
-							f"[{channel.name} {thread.name}] auction is finalized with [{bid_current:,} Gil]. "
+							f"Auction {thread_id} completed.\n"
+							f"[{channel.name} {thread.name}] auction is finalized with [{bid_current:,} Gil].\n"
 							f"Winner: {winner_info.name} ({winner_info.global_name} | {last_bid_user_id})."
 						)
 
@@ -166,7 +166,7 @@ class Bot(commands.Bot):
 					logger.info("Posting post-auction stats")
 					await thread.send(
 						"# This auction has ended!\n"
-						f"## There was {bid_count} bids made!\n"
+						f"## There was {bid_count} bid{'' if bid_count == 1 else 's'} made.\n"
 						f"## The final bid was `{bid_current:,}` Gil!\n"
 						f"The winner has been notified. Thank you for your participation!"
 					)

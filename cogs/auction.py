@@ -109,7 +109,7 @@ async def _place_bid(interaction: Interaction, bid_amount: str=""):
 	thread = await interaction.guild.fetch_channel(interaction.channel_id)
 	# checking to see if this thread has an auction in it
 	thread_ids = config.queue_cursor.execute(f"""
-							select thread_id, message_id, bid_increment, bid_current, last_bid_user_id
+							select thread_id, message_id, bid_increment, bid_current, bid_count, last_bid_user_id
 							from auction
 							where thread_id = {thread.id}
 						""").fetchall()
@@ -121,7 +121,7 @@ async def _place_bid(interaction: Interaction, bid_amount: str=""):
 		return
 
 	# parsing bid
-	_, msg_id, bid_increment, bid_current, last_bid_user_id = thread_ids[0]
+	_, msg_id, bid_increment, bid_current, bid_count, last_bid_user_id = thread_ids[0]
 	set_fix_value = False
 
 	# checking to see if user was the last person who place a bid
@@ -132,8 +132,8 @@ async def _place_bid(interaction: Interaction, bid_amount: str=""):
 		)
 		return
 
+	# user made custom bid
 	if len(bid_amount) > 0:
-		# user made custom bid
 		try:
 			# try to parse bid
 			if "," in bid_amount:
@@ -177,12 +177,21 @@ async def _place_bid(interaction: Interaction, bid_amount: str=""):
 			)
 			return
 	else:
-		# user made normal bid
-		bid_amount = bid_increment
-		await interaction.response.send_message(
-			f"You have made a bid for `{bid_current + bid_amount:,}`!",
-			ephemeral=True
-		)
+		if bid_count == 0:
+			# user made the initial bid, set their bid as the current bid
+			bid_amount = bid_current
+			set_fix_value = True
+			await interaction.response.send_message(
+				f"You have made a bid for `{bid_current:,}`!",
+				ephemeral=True
+			)
+		else:
+			# user made normal bid
+			bid_amount = bid_increment
+			await interaction.response.send_message(
+				f"You have made a bid for `{bid_current + bid_amount:,}`!",
+				ephemeral=True
+			)
 	new_bid_value = bid_amount if set_fix_value else bid_current + bid_amount
 	# update master record
 	config.queue_cursor.execute(f"""
@@ -217,7 +226,7 @@ async def _place_bid(interaction: Interaction, bid_amount: str=""):
 			"-# Paging <@1082827074189930536>"
 		)
 	await msg_to_edit[0].edit(
-		content=f"Current bid: `{new_bid_value:,}` Gil"
+		content=f"Current bid: `{new_bid_value:,}` Gil\n{bid_count+1} Bid{'' if bid_count+1 == 1 else 's'}"
 	)
 
 def number_abbreviation_parser(value: str):
@@ -308,7 +317,7 @@ class Auction(commands.GroupCog):
 			f"Bid increments: `{bid_increment:,}` Gil"
 		)
 		msg = await interaction.channel.send(
-			f"Current bid: `{starting_bid:,}` Gil",
+			f"Starting bid: `{starting_bid:,}` Gil",
 			view=view
 		)
 
