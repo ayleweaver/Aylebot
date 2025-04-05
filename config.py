@@ -16,6 +16,8 @@ BOT_TOKEN = ""
 NOTIFICATION_CHANNEL_ID = 0
 FORUM_CHANNEL_ID = 0
 AUCTION_CHANNEL_ID = 0
+AUCTION_PUBLIC_NOTIFIER_CHANNEL_ID = 0
+ROLE_NOTIFICATION_ID = {}
 ROOM_STATUS_TAGS = {}
 AUCTION_STATUS_TAGS = {}
 ROOM_TYPE_TAGS = {}
@@ -28,7 +30,8 @@ queue_cursor = None
 
 def setup(config_file: str):
 	global BOT_TOKEN, FORUM_CHANNEL_ID, ROOM_STATUS_TAGS, ROOM_TYPE_TAGS, NOTIFICATION_CHANNEL_ID, AUCTION_CHANNEL_ID, AUCTION_STATUS_TAGS
-	global EVENTS_TRIGGER, ROOM_SELECT_DEFAULT_FREQUENCY_TIME, ROOM_SELECT_DEFAULT_FREQUENCY_COUNT, CURRENT_ENV
+	global ROLE_NOTIFICATION_ID
+	global EVENTS_TRIGGER, ROOM_SELECT_DEFAULT_FREQUENCY_TIME, ROOM_SELECT_DEFAULT_FREQUENCY_COUNT, CURRENT_ENV, AUCTION_PUBLIC_NOTIFIER_CHANNEL_ID
 	global DB_NAME, queue_connection, queue_cursor
 
 	logger.info(f"Bot is using config file: {config_file}")
@@ -44,6 +47,8 @@ def setup(config_file: str):
 		NOTIFICATION_CHANNEL_ID = data['channel_id']['notifier']
 		FORUM_CHANNEL_ID = data['channel_id']['room']
 		AUCTION_CHANNEL_ID = data['channel_id']['auction']
+		ROLE_NOTIFICATION_ID = data['role_notification_id']
+		AUCTION_PUBLIC_NOTIFIER_CHANNEL_ID = data['channel_id']['auction_public_notifier']
 		AUCTION_STATUS_TAGS = data['thread_status_tags']['auction']
 		ROOM_STATUS_TAGS = data['thread_status_tags']['room']
 		ROOM_TYPE_TAGS = data['thread_status_tags']['room_type']

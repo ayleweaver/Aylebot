@@ -186,7 +186,6 @@ class Bot(commands.Bot):
 
 				event_time: datetime = config.EVENTS_TRIGGER[event]['time']
 				if time_now.hour == event_time.hour and time_now.minute == event_time.minute:
-
 					await trigger_event(self, event)
 					config.EVENTS_TRIGGER[event]['triggered'] = True
 			else:

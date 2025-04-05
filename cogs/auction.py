@@ -316,6 +316,16 @@ class Auction(commands.GroupCog):
 			f"## Auction closes <t:{auction_endtime_timestamp}:R>\n"
 			f"Bid increments: `{bid_increment:,}` Gil"
 		)
+
+		# send notification
+		chn = await self.bot.fetch_channel(config.AUCTION_PUBLIC_NOTIFIER_CHANNEL_ID)
+		await chn.send(
+			f"## A new auction as started!\n"
+			f"<#{thread.id}>. Starting at `{starting_bid:,}` Gil.\n"
+			f"Ends on <t:{auction_endtime_timestamp}:f> (<t:{auction_endtime_timestamp}:R>)\n"
+			f"-# <@&{config.ROLE_NOTIFICATION_ID['auction']}>"
+		)
+
 		msg = await interaction.channel.send(
 			f"Starting bid: `{starting_bid:,}` Gil",
 			view=view
