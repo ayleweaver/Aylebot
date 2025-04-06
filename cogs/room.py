@@ -52,7 +52,7 @@ class Room(commands.Cog):
 				channel.get_tag(self.room_status_tag_id['occupied']),
 				reason="Guest Check In"
 			)
-			await interaction.response.send_message("Request Processing", delete_after=1)
+			await interaction.response.send_message("Request Processing", delete_after=1, ephemeral=True)
 
 			msg = await interaction.channel.send(f"Available <t:{end_time.timestamp():.0f}:R>")
 			check_in(
@@ -74,6 +74,68 @@ class Room(commands.Cog):
 			)
 		except (discord.errors.Forbidden, discord.errors.HTTPException) as e:
 			logger.error(f"Exception {type(e)}: {e}")
+
+	@app_commands.command(name="reserve", description="Reserve this room for an hour.")
+	async def reserve(self, interaction: Interaction):
+		# note: add tags to  thread requires "Send Messages in Posts" (also allow to add messages in that thread)
+		# note: delete messages in thread requires "Manage Messages"
+		channel = await interaction.guild.fetch_channel(self.forum_id)
+		thread = await interaction.guild.fetch_channel(interaction.channel_id)
+		room_type = list(set(list(self.room_type_tag_id.values())) & set(thread._applied_tags))
+
+		duration = timedelta(minutes=config.ROOM_SELECT_DEFAULT_FREQUENCY_TIME * 2)
+		start_time: datetime = interaction.created_at
+		end_time: datetime = start_time + duration
+
+		# check if this room is already occupied
+		room_occupied = config.queue_cursor.execute(f"select exists(select 1 from queue where thread_id={thread.id} limit 1)").fetchone()[0]
+		ic(room_occupied)
+		if not room_occupied:
+			try:
+				# set reseve tag and availble time
+				await thread.override_tags(
+					channel.get_tag(room_type[0]),
+					channel.get_tag(self.room_status_tag_id['reserved']),
+					reason="Room reservation"
+				)
+				await interaction.response.send_message("Request Processing", delete_after=1, ephemeral=True)
+
+				msg = await interaction.channel.send(f"Reservation ends <t:{end_time.timestamp():.0f}:R>")
+				check_in(
+					CheckInData(
+						thread.id,
+						msg,
+						interaction.user.id,
+						duration.total_seconds(),
+						int(end_time.timestamp()),
+						is_reservation=True
+					)
+				)
+
+				logger.info(
+					f"[{interaction.channel.name}] is reserved for "
+					f"[{datetime.strptime(str(duration), '%H:%M:%S').strftime('%#Hh %#Mm')}] until "
+					f"[{end_time.astimezone().strftime('%I:%M:%S %p %z %Z')}] set "
+					f"by [{interaction.user.global_name} ({interaction.user.name})]"
+				)
+			except (discord.errors.Forbidden, discord.errors.HTTPException) as e:
+				logger.error(f"Exception {type(e)}: {e}")
+		else:
+			# if this room is already occupied, add reservation tag
+			await thread.add_tags(
+				channel.get_tag(self.room_status_tag_id['reserved']),
+				reason="Room reservation"
+			)
+			await interaction.response.send_message(
+				"Request Processing",
+				delete_after=1,
+				ephemeral=True
+			)
+
+			logger.info(
+				f"[{interaction.channel.name}] is reserved for the next set of patrons "
+				f"by [{interaction.user.global_name} ({interaction.user.name})]"
+			)
 
 	@app_commands.command(name="extend", description="Extend the duration of this room")
 	@app_commands.describe(
@@ -116,11 +178,7 @@ class Room(commands.Cog):
 				await interaction.response.send_message("A fatal error has occurred. Paging <@1082827074189930536>")
 
 			try:
-				# add occupied tag and availble time
-				# await thread.remove_tags(channel.get_tag(self.room_status_tag_id['available']), reason="Guest Check In")
-				# await thread.add_tags(channel.get_tag(self.room_status_tag_id['occupied']), reason="Guest Check In")
-				await interaction.response.send_message("Request Processing", delete_after=1)
-				# msg = await interaction.channel.send(f"Available <t:{end_time.timestamp():.0f}:R>")
+				await interaction.response.send_message("Request Processing", delete_after=1, ephemeral=True)
 
 				history = interaction.channel.history()
 				msg = [m async for m in history if m.id == msg_id][0]
@@ -159,4 +217,4 @@ class Room(commands.Cog):
 		for m in msg_to_delete:
 			check_out(msg_id=m.id)
 
-		await interaction.response.send_message("Done\n-# This messsage will auto delete in 5s", delete_after=5)
+		await interaction.response.send_message("Done\n-# This messsage will auto delete in 5s", delete_after=5, ephemeral=True)

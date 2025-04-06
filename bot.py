@@ -51,15 +51,15 @@ class Bot(commands.Bot):
 
 			for k in keys:
 				try:
-					thread_id, message_id, user_id, end_time, cc_user = k
+					thread_id, message_id, user_id, end_time, cc_user, prereservation = k
 					message: Message = await self.get_channel(config.FORUM_CHANNEL_ID).get_thread(thread_id).fetch_message(message_id)
 					channel = await message.guild.fetch_channel(config.FORUM_CHANNEL_ID)
 					thread = await message.guild.fetch_channel(message.channel.id)
 
 					await message.delete()
-					# await interaction.delete_original_response()
 
 					has_reservation = config.ROOM_STATUS_TAGS['reserved'] in thread._applied_tags
+
 
 					room_type = list(set(list(config.ROOM_TYPE_TAGS.values())) & set(thread._applied_tags))
 					await thread.override_tags(
@@ -72,8 +72,36 @@ class Bot(commands.Bot):
 					# ping notification channel
 					target_user_id: int = user_id
 					target_channel: discord.TextChannel = await message.guild.fetch_channel(config.NOTIFICATION_CHANNEL_ID)
-					m = (f"<@{target_user_id}>\n"+
-						f"Room {message.channel.name} has been auto checked out." + (" This room has reserveration." if has_reservation else "")+"\n")
+					if not prereservation:
+						# normal checkout message
+						m = (f"<@{target_user_id}>\n"+
+							f"Room {message.channel.name} has been auto checked out." + (" This room has reserveration." if has_reservation else "")+"\n")
+
+						if has_reservation:
+							# set up pre-reservation
+							msg = await channel.send(f"Reservation ends <t:{end_time.timestamp():.0f}:R>")
+							reservation_duration = config.ROOM_SELECT_DEFAULT_FREQUENCY_TIME * 2
+							auto_reception.check_in(
+								auto_reception.CheckInData(
+									thread.id,
+									msg,
+									target_user_id,
+									reservation_duration,
+									int(end_time + reservation_duration),
+									is_reservation=True
+								)
+							)
+
+							target_user: discord.User = self.get_user(user_id)
+							logger.info(
+								f"[{message.channel.name}] is reserved for the next set of patrons "
+								f"by [{target_user.global_name} ({target_user.name})]"
+							)
+					else:
+						# pre reservation message
+						m = (f"<@{target_user_id}>\n"
+						     f"Room {message.channel.name}'s resevation has expired.")
+
 
 					if cc_user is not None:
 						m += f"-# Also CCing <@{cc_user}>"
