@@ -89,7 +89,7 @@ class Room(commands.Cog):
 
 		# check if this room is already occupied
 		room_occupied = config.queue_cursor.execute(f"select exists(select 1 from queue where thread_id={thread.id} limit 1)").fetchone()[0]
-		ic(room_occupied)
+
 		if not room_occupied:
 			try:
 				# set reseve tag and availble time

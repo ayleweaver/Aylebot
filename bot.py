@@ -60,7 +60,6 @@ class Bot(commands.Bot):
 
 					has_reservation = config.ROOM_STATUS_TAGS['reserved'] in thread._applied_tags
 
-
 					room_type = list(set(list(config.ROOM_TYPE_TAGS.values())) & set(thread._applied_tags))
 					await thread.override_tags(
 						channel.get_tag(room_type[0]),
@@ -73,14 +72,14 @@ class Bot(commands.Bot):
 					target_user_id: int = user_id
 					target_channel: discord.TextChannel = await message.guild.fetch_channel(config.NOTIFICATION_CHANNEL_ID)
 					if not prereservation:
-						# normal checkout message
+						# normal checkout message, reserved while room is occupied
 						m = (f"<@{target_user_id}>\n"+
 							f"Room {message.channel.name} has been auto checked out." + (" This room has reserveration." if has_reservation else "")+"\n")
 
 						if has_reservation:
 							# set up pre-reservation
-							msg = await channel.send(f"Reservation ends <t:{end_time.timestamp():.0f}:R>")
-							reservation_duration = config.ROOM_SELECT_DEFAULT_FREQUENCY_TIME * 2
+							reservation_duration = timedelta(minutes=config.ROOM_SELECT_DEFAULT_FREQUENCY_TIME * 2).total_seconds()
+							msg = await thread.send(f"Reservation ends <t:{end_time + reservation_duration:.0f}:R>")
 							auto_reception.check_in(
 								auto_reception.CheckInData(
 									thread.id,
@@ -90,6 +89,12 @@ class Bot(commands.Bot):
 									int(end_time + reservation_duration),
 									is_reservation=True
 								)
+							)
+							await thread.override_tags(
+								channel.get_tag(room_type[0]),
+								channel.get_tag(config.ROOM_STATUS_TAGS['available']),
+								channel.get_tag(config.ROOM_STATUS_TAGS['reserved']),
+								reason="Autocheck out"
 							)
 
 							target_user: discord.User = self.get_user(user_id)
