@@ -45,6 +45,17 @@ def get_thread_end_times(thread_id: int) -> List:
 
 	return message_ids
 
+def is_room_occupied(thread_id: int) -> bool:
+	"""
+	Check to see if the room with the specified ID is listed in the queue's master table
+	Args:
+		thread_id (int): discord Thread ID
+
+	Returns:
+		bool
+	"""
+	return config.queue_cursor.execute(f"select exists(select 1 from queue where thread_id={thread_id} and is_reservation=0 limit 1)").fetchone()[0]
+
 @log_reception
 def extension(thread_id: int, duration: timedelta) -> None:
 	"""

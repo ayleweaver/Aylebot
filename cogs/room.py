@@ -7,7 +7,8 @@ from icecream import ic
 from logger import logger
 from typing import List
 
-from src.auto_reception import check_out, check_in, extension, get_thread_end_times, CheckInData
+from src.auto_reception import check_out, check_in, extension, get_thread_end_times, CheckInData, is_room_occupied
+
 
 async def auto_complete_time(interaction: Interaction, current: str) -> List[app_commands.Choice[timedelta]]:
 	time_choices = [
@@ -24,6 +25,42 @@ class Room(commands.Cog):
 		self.forum_id = forum_id
 		self.room_status_tag_id = room_status_tag_id
 		self.room_type_tag_id = room_type_tag_id
+
+	#######################################
+	# HELPER FUNCTIONS
+	#######################################
+	async def _clear_room(self, interaction: Interaction):
+		"""
+		reset the status of a room (that is represented by the thread)
+		set room status back to available and clear any messages set by this bot
+
+		Args:
+			interaction (Interaction): Discord Interaction object
+
+		Returns:
+			None
+		"""
+		channel = await interaction.guild.fetch_channel(self.forum_id)
+		thread = interaction.channel
+
+		logger.info(f"[{interaction.channel.name}] status cleared by {interaction.user.global_name} ({interaction.user.name})")
+
+		room_type = list(set(list(self.room_type_tag_id.values())) & set(thread._applied_tags))
+		await thread.override_tags(
+			channel.get_tag(room_type[0]),
+			channel.get_tag(self.room_status_tag_id['available']),
+			reason="Guest Check In"
+		)
+		msg = thread.history()
+		msg_to_delete = [m async for m in msg if m.author.id == self.client.user.id]
+		await thread.delete_messages(msg_to_delete)
+
+		for m in msg_to_delete:
+			check_out(msg_id=m.id)
+
+	#######################################
+	# MAIN COG FUNCTIONS
+	#######################################
 
 	@app_commands.command(name="occupied", description="Close this room and mark it as occupied")
 	@app_commands.describe(
@@ -43,6 +80,20 @@ class Room(commands.Cog):
 		duration = timedelta(minutes=config.ROOM_SELECT_DEFAULT_FREQUENCY_TIME*time)
 		start_time: datetime = interaction.created_at
 		end_time: datetime = start_time + duration
+
+		# check if room is already occupied
+		if is_room_occupied(thread.id):
+			await interaction.response.send_message(
+				"This room is already occupied!",
+				ephemeral=True
+			)
+			return
+
+		# check to see if there is a reservation tag
+		if self.room_status_tag_id['reserved'] in thread._applied_tags:
+			# reset room statuses before occupying
+			await self._clear_room(interaction)
+
 		try:
 			# add occupied tag and availble time
 			# await thread.remove_tags(channel.get_tag(self.room_status_tag_id['available']), reason="Guest Check In")
@@ -88,7 +139,7 @@ class Room(commands.Cog):
 		end_time: datetime = start_time + duration
 
 		# check if this room is already occupied
-		room_occupied = config.queue_cursor.execute(f"select exists(select 1 from queue where thread_id={thread.id} limit 1)").fetchone()[0]
+		room_occupied = is_room_occupied(thread.id)
 
 		if not room_occupied:
 			try:
@@ -199,22 +250,6 @@ class Room(commands.Cog):
 	@app_commands.command(name="clear", description="Clear all status of this room")
 	async def clear(self, interaction: Interaction):
 
-		channel = await interaction.guild.fetch_channel(self.forum_id)
-		thread = interaction.channel
-
-		logger.info(f"[{interaction.channel.name}] status cleared by {interaction.user.global_name} ({interaction.user.name})")
-
-		room_type = list(set(list(self.room_type_tag_id.values())) & set(thread._applied_tags))
-		await thread.override_tags(
-			channel.get_tag(room_type[0]),
-			channel.get_tag(self.room_status_tag_id['available']),
-			reason="Guest Check In"
-		)
-		msg = thread.history()
-		msg_to_delete = [m async for m in msg if m.author.id == self.client.user.id]
-		await thread.delete_messages(msg_to_delete)
-
-		for m in msg_to_delete:
-			check_out(msg_id=m.id)
+		await self._clear_room(interaction)
 
 		await interaction.response.send_message("Done\n-# This messsage will auto delete in 5s", delete_after=5, ephemeral=True)

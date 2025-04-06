@@ -92,7 +92,6 @@ class Bot(commands.Bot):
 							)
 							await thread.override_tags(
 								channel.get_tag(room_type[0]),
-								channel.get_tag(config.ROOM_STATUS_TAGS['available']),
 								channel.get_tag(config.ROOM_STATUS_TAGS['reserved']),
 								reason="Autocheck out"
 							)
