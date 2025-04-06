@@ -55,7 +55,16 @@ class Room(commands.Cog):
 			await interaction.response.send_message("Request Processing", delete_after=1)
 
 			msg = await interaction.channel.send(f"Available <t:{end_time.timestamp():.0f}:R>")
-			check_in(CheckInData(thread.id, msg,  interaction.user.id, int(end_time.timestamp()), cc_user_id=cc_user.id if cc_user is not None else None))
+			check_in(
+				CheckInData(
+					thread.id,
+					msg,
+					interaction.user.id,
+					duration.total_seconds(),
+					int(end_time.timestamp()),
+					cc_user_id=cc_user.id if cc_user is not None else None
+				)
+			)
 
 			logger.info(
 				f"[{interaction.channel.name}] is occupied for "
