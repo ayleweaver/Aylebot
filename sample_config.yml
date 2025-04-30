@@ -45,7 +45,7 @@ triggers:
   open:
     time: "6:00 PM"
     message: "# :bell: Bing Bong Bing Bong :bell:\nIt is opening time~"
-    remindee: [1343429222386892861]
+    remindee: [role_id]
   close:
     time: "10:00 PM"
     message: "# :bell: Bing Bong Bing Bong :bell:\nWe are closed now~"
