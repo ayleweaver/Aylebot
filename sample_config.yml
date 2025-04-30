@@ -1,0 +1,56 @@
+# This is the configuration file for Aylebot to function properly.
+# All keys are required to be filled out.
+bot_token: your_discord_bot_token_here
+
+# Room releated keys
+# The maximum time can be allocated is based on the two fields below
+# max time (in minutes) = room_time_selection_count * room_time_selection_frequency
+room_time_selection_frequency: 30 # The time different between choices for rooms, in minutes
+room_time_selection_count: 10 # The amount of choices when using the /occupied command. Max 25 as it is the Discord hardcoded limit
+
+# All values in this dictionary are channel ID
+# right-click on channel and select "copy id"
+channel_id: 
+  notifier: text_channel_id # Text Channel, Where to send notifications (i.e. room expired, reminders)
+  room: form_channel_id # Form Channel, Where to send room related messages (i.e. time tracking, stauts assignment)
+  auction: form_channel_id # Form Channel, Where to send auction related message (i.e. auction bidding)
+  auction_public_notifier: text_channel_id # Text Channel, where to send public auction notification (i.e. new auction)
+  
+# Role IDs, used to ping in notifier channels
+role_notification_id:
+  auction: discord_role_id
+
+# Thread tag IDs
+thread_status_tags:
+  # Tag below must exists in channel_id[auction]
+  auction:
+    in_progress: form_tag_id_1
+    ready: form_tag_id_2
+    archived: form_tag_id_3
+    
+  # Tag below must exists in channel_id[room]
+  room:
+    occupied: form_tag_id_4
+    available: form_tag_id_5
+    reserved: form_tag_id_6
+  room_type:
+    vanilla: form_tag_id_7
+    spice: form_tag_id_8
+
+# Triggers activate on the time that it is listed (up to a 10 seconds delay)
+# Trigger times: in format HH:MM [AM/PM]
+# Trigger message: Follow Discord message formatting rules
+# Trigger remindee: List of Discord IDs or roles
+triggers:
+  open:
+    time: "6:00 PM"
+    message: "# :bell: Bing Bong Bing Bong :bell:\nIt is opening time~"
+    remindee: [1343429222386892861]
+  close:
+    time: "10:00 PM"
+    message: "# :bell: Bing Bong Bing Bong :bell:\nWe are closed now~"
+    remindee: []
+  last_call:
+    time: "9:45 PM"
+    message: "## :bell: Last Call Reminder :bell:"
+    remindee: []
