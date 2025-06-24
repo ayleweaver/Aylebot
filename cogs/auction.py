@@ -1,7 +1,5 @@
 import traceback
-
 import discord
-
 import config, re
 
 from datetime import datetime, timedelta
@@ -10,6 +8,8 @@ from discord.ext import commands
 from icecream import ic
 from logger import logger
 from typing import List
+from src.misc import number_abbreviation_parser
+from src.auction import create_auction_history_table, get_auction_info
 
 #####################################################################
 # DISCORD VIEWS
@@ -84,17 +84,7 @@ class BidView(ui.View):
 #####################################################################
 # HELPER FUNCTIONS
 #####################################################################
-def _create_auction_history_table(thread_id: int):
-	"""
-	Initialize a table for auction history
-	Args:
-		thread_id (int): the thread id
 
-	Returns:
-		None
-	"""
-	config.queue_cursor.execute(f"CREATE TABLE IF NOT EXISTS auction_history_{thread_id}(user_id, bid, current_bid, set_bid)")
-	config.queue_connection.commit()
 
 async def _place_bid(interaction: Interaction, bid_amount: str=""):
 	"""
@@ -108,12 +98,8 @@ async def _place_bid(interaction: Interaction, bid_amount: str=""):
 	"""
 	thread = await interaction.guild.fetch_channel(interaction.channel_id)
 	# checking to see if this thread has an auction in it
-	thread_ids = config.queue_cursor.execute(f"""
-							select thread_id, message_id, bid_increment, bid_current, bid_count, last_bid_user_id
-							from auction
-							where thread_id = {thread.id}
-						""").fetchall()
-	if len(thread_ids) == 0:
+	auction_data = get_auction_info(interaction, thread)
+	if not auction_data:
 		await interaction.response.send_message(
 			"There is no auction in this thread. Please navigate to an active auction.",
 			ephemeral=True
@@ -121,7 +107,7 @@ async def _place_bid(interaction: Interaction, bid_amount: str=""):
 		return
 
 	# parsing bid
-	_, msg_id, bid_increment, bid_current, bid_count, last_bid_user_id = thread_ids[0]
+	_, msg_id, bid_increment, bid_current, bid_count, last_bid_user_id = auction_data[0]
 	set_fix_value = False
 
 	# checking to see if user was the last person who place a bid
@@ -229,23 +215,6 @@ async def _place_bid(interaction: Interaction, bid_amount: str=""):
 		content=f"Current bid: `{new_bid_value:,}` Gil\n{bid_count+1} Bid{'' if bid_count+1 == 1 else 's'}"
 	)
 
-def number_abbreviation_parser(value: str):
-	regex = re.compile(
-		r'((?P<millions>\d+?\.?\d*?)m)?'
-		r'((?P<thousands>\d+?\.?\d*?)k)?'
-		r'(?P<ones>\d*\.?\d*)?'
-	)
-	# ?((\d+?\.\d*?)k)?(\d*\.\d*?)
-	try:
-		match = regex.match(value)
-		group_dict = match.groupdict()
-		group_dict = {k: float(v) if v else 0 for k, v in group_dict.items()}
-
-		return int((group_dict['millions'] * 1000000) + (group_dict['thousands'] * 1000) + (group_dict['ones']))
-	except ValueError:
-		logger.warn(f"number abbreviation parser cannot parse input value {value}")
-		return None
-
 # table columns:
 # thread_id, message_id, end_time, bid_increment, bid_current, last_bid_user_id
 
@@ -282,15 +251,9 @@ class Auction(commands.GroupCog):
 		)
 
 		# checking to see if this thread has an auction in it
-		thread_ids = config.queue_cursor.execute(f"""
-			select thread_id
-			from auction
-			where thread_id = {thread.id}
-		""").fetchall()
-
-		if len(thread_ids) > 0:
+		if get_auction_info(interaction, thread):
 			await interaction.response.send_message(
-				"This thread already has at least 1 auction registered. (It may have no cleared correctly).",
+				"There is an active auction going on. Please wait until the auction ends.",
 				ephemeral=True
 			)
 			return
@@ -319,7 +282,7 @@ class Auction(commands.GroupCog):
 
 		# send notification
 		chn = await self.bot.fetch_channel(config.AUCTION_PUBLIC_NOTIFIER_CHANNEL_ID)
-		await chn.send(
+		notification_msg = await chn.send(
 			f"## A new auction as started!\n"
 			f"<#{thread.id}>. Starting at `{starting_bid:,}` Gil.\n"
 			f"Ends on <t:{auction_endtime_timestamp}:f> (<t:{auction_endtime_timestamp}:R>)\n"
@@ -333,13 +296,13 @@ class Auction(commands.GroupCog):
 
 		# add entry to table
 		config.queue_cursor.execute(f"""
-			INSERT INTO auction (thread_id, message_id, end_time, bid_increment, bid_current, bid_count, last_bid_user_id)
-			VALUES (?, ?, ?, ?, ?, ?, ?)
-		""", (thread.id, msg.id, auction_endtime_timestamp, bid_increment, starting_bid, 0, -1))
+			INSERT INTO auction (thread_id, message_id, notification_id, end_time, bid_increment, bid_current, bid_count, last_bid_user_id)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		""", (thread.id, msg.id, notification_msg.id, auction_endtime_timestamp, bid_increment, starting_bid, 0, -1))
 		config.queue_connection.commit()
 
 		# initialize history table
-		_create_auction_history_table(thread.id)
+		create_auction_history_table(thread.id)
 
 		# log
 		logger.info(

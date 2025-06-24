@@ -1,7 +1,7 @@
 import config
 
 from datetime import datetime, timedelta
-from discord import Message, User
+from discord import Message, User, TextChannel, errors
 from logger import logger
 from icecream import ic
 from typing import List
@@ -137,3 +137,73 @@ def check_out(key=0, msg_id=0):
 
 	config.queue_cursor.execute(f"DELETE FROM queue WHERE end_time = {key} or message_id = {msg_id}")
 	config.queue_connection.commit()
+
+async def room_task(bot):
+	key_count = config.queue_cursor.execute("SELECT count(*) FROM queue").fetchone()[0]
+	if key_count > 0:
+		res = config.queue_cursor.execute(f"SELECT * FROM queue WHERE end_time <= {int(datetime.now().timestamp())}")
+		keys = res.fetchall()
+
+		for k in keys:
+			try:
+				thread_id, message_id, user_id, end_time, cc_user, prereservation = k
+				message: Message = await bot.get_channel(config.FORUM_CHANNEL_ID).get_thread(thread_id).fetch_message(message_id)
+				channel = await message.guild.fetch_channel(config.FORUM_CHANNEL_ID)
+				thread = await message.guild.fetch_channel(message.channel.id)
+
+				await message.delete()
+
+				has_reservation = config.ROOM_STATUS_TAGS['reserved'] in thread._applied_tags
+
+				room_type = list(set(list(config.ROOM_TYPE_TAGS.values())) & set(thread._applied_tags))
+				await thread.override_tags(
+					channel.get_tag(room_type[0]),
+					channel.get_tag(config.ROOM_STATUS_TAGS['available']),
+					reason="Autocheck out"
+				)
+				check_out(key=end_time)
+
+				# ping notification channel
+				target_user_id: int = user_id
+				target_channel: TextChannel = await message.guild.fetch_channel(config.NOTIFICATION_CHANNEL_ID)
+				if not prereservation:
+					# normal checkout message, reserved while room is occupied
+					m = (f"<@{target_user_id}>\n" +
+					     f"Room {message.channel.name} has been auto checked out." + (" This room has reserveration." if has_reservation else "") + "\n")
+
+					if has_reservation:
+						# set up pre-reservation
+						reservation_duration = timedelta(minutes=config.ROOM_SELECT_DEFAULT_FREQUENCY_TIME * 2).total_seconds()
+						msg = await thread.send(f"Reservation ends <t:{end_time + reservation_duration:.0f}:R>")
+						check_in(
+							CheckInData(
+								thread.id,
+								msg,
+								target_user_id,
+								reservation_duration,
+								int(end_time + reservation_duration),
+								is_reservation=True
+							)
+						)
+						await thread.override_tags(
+							channel.get_tag(room_type[0]),
+							channel.get_tag(config.ROOM_STATUS_TAGS['reserved']),
+							reason="Autocheck out"
+						)
+
+						target_user: User = bot.get_user(user_id)
+						logger.info(
+							f"[{message.channel.name}] is reserved for the next set of patrons "
+							f"by [{target_user.global_name} ({target_user.name})]"
+						)
+				else:
+					# pre reservation message
+					m = (f"<@{target_user_id}>\n"
+					     f"Room {message.channel.name}'s resevation has expired.")
+
+				if cc_user is not None:
+					m += f"-# Also CCing <@{cc_user}>"
+
+				await target_channel.send(m)
+			except errors.NotFound as e:
+				logger.error(f"queue_checker caught an exception: {type(e)} {e}")
