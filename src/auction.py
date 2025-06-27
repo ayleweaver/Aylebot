@@ -24,6 +24,11 @@ def create_auction_history_table(thread_id: int) -> None:
 	Returns:
 		None
 	"""
+	if len(list(config.queue_cursor.execute("SELECT count(*) FROM auction"))) > 0:
+		logger.info(f"Auction history existed for thread {thread_id}. Dropping this table.")
+		config.queue_cursor.execute(f"drop table auction_history_{thread_id}")
+
+	logger.info(f"Initializing table for thread {thread_id}")
 	config.queue_cursor.execute(f"CREATE TABLE IF NOT EXISTS auction_history_{thread_id}(user_id, bid, current_bid, set_bid)")
 	config.queue_connection.commit()
 
@@ -88,7 +93,7 @@ async def auction_task(bot: Bot):
 						f"# :tada: __Congratulations!__ :tada:\n"
 						f"## You are the winner of an auction in the Weaver's Nest!\n\n"
 						f"The final bid was `{bid_current:,}` Gil\n\n"
-						f"Please see the thread **{thread.name}** in the Weaver's Nest **{channel.name} ** channel.\n"
+						f"Please see the thread **<#{thread_id}>** in the Weaver's Nest **{channel.name} ** channel.\n"
 						f"Please see reception in-game for your payment.\n"
 						f"-# Your claim to your prize expires <t:{int((datetime.now() + timedelta(minutes=10)).timestamp())}:R>. If you do not accept within this timeframe, your prize will go to the next bidder."
 					)

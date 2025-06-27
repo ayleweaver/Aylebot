@@ -327,12 +327,8 @@ class Auction(commands.GroupCog):
 		channel = await interaction.guild.fetch_channel(config.AUCTION_CHANNEL_ID)
 		thread = await interaction.guild.fetch_channel(interaction.channel_id)
 		# checking to see if this thread has an auction in it
-		thread_ids = config.queue_cursor.execute(f"""
-				select thread_id, message_id, bid_increment, bid_current
-				from auction
-				where thread_id = {thread.id}
-			""").fetchall()
-		if len(thread_ids) == 0:
+		thread_ids = get_auction_info(interaction, thread)
+		if not thread_ids:
 			await interaction.response.send_message(
 				"There is no auction in this thread. Please navigate to an active auction.",
 				ephemeral=True
@@ -391,5 +387,23 @@ class Auction(commands.GroupCog):
 			f"  - If you are the winner, Aylebot will DM you notifying that you are the winner. Please follow the instructino that it provide to then proceed."
 			f"5. What happens if I waited too long to redeem my auction prize?\n"
 			f"  - After 10 minutes, the auction prize will go to the next person that bids before you.\n",
+			ephemeral=True
+		)
+
+
+	@app_commands.command(name="participants", description="Get all of the participants in bidding order of this auction")
+	@app_commands.checks.has_permissions(administrator=True)
+	async def participants(self, interaction: Interaction):
+		thread = await interaction.guild.fetch_channel(interaction.channel_id)
+
+		_participants = config.queue_cursor.execute(f"select user_id, current_bid from auction_history_{thread.id} order by current_bid desc limit 10;")
+		m = ""
+		for participant_data in _participants:
+			user_id, current_bid = participant_data
+			m += f"<@{user_id}> ({user_id}): {current_bid}\n"
+
+
+		await interaction.response.send_message(
+			m,
 			ephemeral=True
 		)
