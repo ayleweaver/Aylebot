@@ -233,8 +233,9 @@ class Auction(commands.GroupCog):
 		duration="How long does this auction last. (Example input: 1d3h)",
 		starting_bid="The initial bid",
 		bid_increment="The incremental bid",
+		test_bid="Test bid, does not notify auction role"
 	)
-	async def begin(self, interaction: Interaction, duration: str, starting_bid: str, bid_increment: str):
+	async def begin(self, interaction: Interaction, duration: str, starting_bid: str, bid_increment: str, test_bid:bool=False):
 		channel = await interaction.guild.fetch_channel(config.AUCTION_CHANNEL_ID)
 		thread = await interaction.guild.fetch_channel(interaction.channel_id)
 
@@ -282,11 +283,19 @@ class Auction(commands.GroupCog):
 
 		# send notification
 		chn = await self.bot.fetch_channel(config.AUCTION_PUBLIC_NOTIFIER_CHANNEL_ID)
-		notification_msg = await chn.send(
+		notification_msg_content = (
 			f"## A new auction as started!\n"
 			f"<#{thread.id}>. Starting at `{starting_bid:,}` Gil.\n"
 			f"Ends on <t:{auction_endtime_timestamp}:f> (<t:{auction_endtime_timestamp}:R>)\n"
-			f"-# <@&{config.ROLE_NOTIFICATION_ID['auction']}>"
+		)
+
+		if test_bid:
+			notification_msg_content += "-# This is a test bid, please ignore."
+		else:
+			notification_msg_content += f"-# <@&{config.ROLE_NOTIFICATION_ID['auction']}>"
+
+		notification_msg = await chn.send(
+			notification_msg_content
 		)
 
 		msg = await interaction.channel.send(
