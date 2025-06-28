@@ -396,14 +396,20 @@ class Auction(commands.GroupCog):
 	async def participants(self, interaction: Interaction):
 		thread = await interaction.guild.fetch_channel(interaction.channel_id)
 
-		_participants = config.queue_cursor.execute(f"select user_id, current_bid from auction_history_{thread.id} order by current_bid desc limit 10;")
-		m = ""
-		for participant_data in _participants:
-			user_id, current_bid = participant_data
-			m += f"<@{user_id}> ({user_id}): {current_bid}\n"
+		_participants = config.queue_cursor.execute(f"select user_id, current_bid from auction_history_{thread.id} order by current_bid desc limit 10;").fetchall()
+		if len(_participants) > 0:
+			m = ""
+			for participant_data in _participants:
+				user_id, current_bid = participant_data
+				m += f"<@{user_id}> ({user_id}): {current_bid}\n"
 
 
-		await interaction.response.send_message(
-			m,
-			ephemeral=True
-		)
+			await interaction.response.send_message(
+				m,
+				ephemeral=True
+			)
+		else:
+			await interaction.response.send_message(
+				"There are no participants in this auction.",
+				ephemeral=True
+			)

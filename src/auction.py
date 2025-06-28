@@ -24,7 +24,7 @@ def create_auction_history_table(thread_id: int) -> None:
 	Returns:
 		None
 	"""
-	if len(list(config.queue_cursor.execute("SELECT count(*) FROM auction"))) > 0:
+	if len(list(config.queue_cursor.execute(f"select tbl_name from sqlite_master where type='table' and tbl_name='auction_history_{thread_id}';").fetchall())) > 0:
 		logger.info(f"Auction history existed for thread {thread_id}. Dropping this table.")
 		config.queue_cursor.execute(f"drop table auction_history_{thread_id}")
 
