@@ -8,7 +8,7 @@ from discord.ext import commands
 from icecream import ic
 from logger import logger
 from typing import List
-from src.misc import number_abbreviation_parser
+from src.misc import number_abbreviation_parser, parse_duration
 from src.auction import create_auction_history_table, get_auction_info
 
 #####################################################################
@@ -98,7 +98,7 @@ async def _place_bid(interaction: Interaction, bid_amount: str=""):
 	"""
 	thread = await interaction.guild.fetch_channel(interaction.channel_id)
 	# checking to see if this thread has an auction in it
-	auction_data = get_auction_info(interaction, thread)
+	auction_data = get_auction_info(thread)
 	if not auction_data:
 		await interaction.response.send_message(
 			"There is no auction in this thread. Please navigate to an active auction.",
@@ -107,7 +107,7 @@ async def _place_bid(interaction: Interaction, bid_amount: str=""):
 		return
 
 	# parsing bid
-	_, msg_id, bid_increment, bid_current, bid_count, last_bid_user_id = auction_data[0]
+	_, _, msg_id, _, _, bid_increment, bid_current, bid_count, last_bid_user_id = auction_data[0]
 	set_fix_value = False
 
 	# checking to see if user was the last person who place a bid
@@ -212,7 +212,8 @@ async def _place_bid(interaction: Interaction, bid_amount: str=""):
 			"-# Paging <@1082827074189930536>"
 		)
 	await msg_to_edit[0].edit(
-		content=f"Current bid: `{new_bid_value:,}` Gil\n{bid_count+1} Bid{'' if bid_count+1 == 1 else 's'}"
+		content=f"Current bid: `{new_bid_value:,}` Gil\n"
+		        f"{bid_count+1} Bid{'' if bid_count+1 == 1 else 's'}"
 	)
 
 # table columns:
@@ -252,7 +253,7 @@ class Auction(commands.GroupCog):
 		)
 
 		# checking to see if this thread has an auction in it
-		if get_auction_info(interaction, thread):
+		if get_auction_info(thread):
 			await interaction.response.send_message(
 				"There is an active auction going on. Please wait until the auction ends.",
 				ephemeral=True
@@ -264,17 +265,12 @@ class Auction(commands.GroupCog):
 		bid_increment = number_abbreviation_parser(bid_increment)
 
 		# parse duration and set up times
-		regex = re.compile(r'((?P<days>\d+?)d)?((?P<hours>\d+?)hr?)?((?P<minutes>\d+?)m)?((?P<seconds>\d+?)s)?')
-		match = regex.match(duration)
-		duration_dict = match.groupdict()
-		duration_dict = {k: int(v) if v is not None else 0 for k, v in duration_dict.items()}
-		auction_duration = timedelta(**duration_dict)
-		auction_endtime_timestamp = int((datetime.now() + auction_duration).timestamp())
+		auction_duration, auction_endtime_timestamp = parse_duration(duration)
 
 		view = BidView()
 		# send messages
 		await interaction.response.send_message("Request Processing", delete_after=5)
-		await interaction.channel.send(
+		auction_info_msg = await interaction.channel.send(
 			"# This auction has begun\n"
 			f"## You may bid until <t:{auction_endtime_timestamp}:f>\n"
 			f"## Auction closes <t:{auction_endtime_timestamp}:R>\n"
@@ -305,9 +301,9 @@ class Auction(commands.GroupCog):
 
 		# add entry to table
 		config.queue_cursor.execute(f"""
-			INSERT INTO auction (thread_id, message_id, notification_id, end_time, bid_increment, bid_current, bid_count, last_bid_user_id)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-		""", (thread.id, msg.id, notification_msg.id, auction_endtime_timestamp, bid_increment, starting_bid, 0, -1))
+			INSERT INTO auction (thread_id, auction_info_msg_id, message_id, notification_id, end_time, bid_increment, bid_current, bid_count, last_bid_user_id)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		""", (thread.id, auction_info_msg.id, msg.id, notification_msg.id, auction_endtime_timestamp, bid_increment, starting_bid, 0, -1))
 		config.queue_connection.commit()
 
 		# initialize history table
@@ -327,7 +323,7 @@ class Auction(commands.GroupCog):
 		channel = await interaction.guild.fetch_channel(config.AUCTION_CHANNEL_ID)
 		thread = await interaction.guild.fetch_channel(interaction.channel_id)
 		# checking to see if this thread has an auction in it
-		thread_ids = get_auction_info(interaction, thread)
+		thread_ids = get_auction_info(thread)
 		if not thread_ids:
 			await interaction.response.send_message(
 				"There is no auction in this thread. Please navigate to an active auction.",
@@ -370,23 +366,74 @@ class Auction(commands.GroupCog):
 			# do nothing
 			pass
 
-	@app_commands.command(name="faq", description="Display FAQ for this Aylebot feature.")
-	async def faq(self, interaction: Interaction):
+	@app_commands.command(name="extend", description="Extends the duration of this auction")
+	@app_commands.checks.has_permissions(administrator=True)
+	async def extend(self, interaction: Interaction, duration: str):
+		channel = await interaction.guild.fetch_channel(config.AUCTION_CHANNEL_ID)
+		thread = await interaction.guild.fetch_channel(interaction.channel_id)
+
+		# check if auction is actually active in backend
+		auction_data = get_auction_info(thread)
+		if not auction_data:
+			logger.warning(f"Auction {thread.id} does not exists in database.")
+
+		# check to see if auction is active in discord
+		if config.AUCTION_STATUS_TAGS['in_progress'] not in [t.id for t in thread.applied_tags]:
+			# needs in progress tag to get able to extend
+			logger.info(
+				f"Auction extension attempted by [{interaction.user.global_name} ({interaction.user.name})], but auction is not in progressed, "
+			)
+
+			tag = channel.get_tag(config.AUCTION_STATUS_TAGS['in_progress'])
+			await interaction.response.send_message(
+				f"This thread needs the [**{tag.emoji} {tag.name}**] tag to extend auction. Please review it before extending it.",
+				ephemeral=True
+			)
+			return
+
+		thread_id, auction_info_msg_id, msg_id, notification_id, end_time, bid_increment, current_bid, bid_count, _ = auction_data[0]
+
+		extend_duration, auction_new_timestamp = parse_duration(duration, datetime.fromtimestamp(end_time))
+
+		# modifying message
+		history = interaction.channel.history()
+		msg = [m async for m in history if m.id == auction_info_msg_id][0]
+		await msg.edit(content=
+			"# This auction has begun\n"
+			f"## You may bid until <t:{auction_new_timestamp}:f>\n"
+			f"## Auction closes <t:{auction_new_timestamp}:R>\n"
+			f"Bid increments: `{bid_increment:,}` Gil"
+		)
+
+		# modifying announcement message
+		auction_announcement_chn = await interaction.guild.fetch_channel(config.AUCTION_PUBLIC_NOTIFIER_CHANNEL_ID)
+		history = auction_announcement_chn.history()
+		msg = [m async for m in history if m.id == notification_id][0]
+		await msg.edit(content=
+			f"## An auction has been extended!\n"
+			f"<#{thread.id}>. Current at `{current_bid:,}` Gil.\n"
+			f"Ends on <t:{auction_new_timestamp}:f> (<t:{auction_new_timestamp}:R>)\n"
+			f"-# <@&{config.ROLE_NOTIFICATION_ID['auction']}"
+        )
+
+		# updating the auction master table
+		config.queue_cursor.execute(f"""
+			update auction
+			set
+				end_time = {auction_new_timestamp}
+			where thread_id = {thread_id}
+		""")
+
+
+		logger.info(
+			f"[{interaction.channel.name}] has an auction extended for "
+			f"[{str(extend_duration)}] until "
+			f"[{datetime.fromtimestamp(auction_new_timestamp).astimezone().strftime('%I:%M:%S %p %z %Z')}] set "
+			f"by [{interaction.user.global_name} ({interaction.user.name})]"
+		)
+
 		await interaction.response.send_message(
-			"# AyleBot Auction FAQ\n"
-			f"1. How do I participate?\n"
-			f"  - Please contact the venue's owner if you would like to be auctioned off.\n"
-			f"2. How do I bid?\n"
-			f"  - To place a bid, press the green \"Bid!\" button to raise the current bid by the increment bid.\n"
-			f"  - To place a bid larger than the current bid, press the \"Custom Bid Amount\" to raise the current bid to a desired amount.\n"
-			f"    - Note: you will need to place a bid that is at least the current bid and incremental bid combined.\n"
-			f"    - Example: using **/auction bid 3500** when the current bid is 3,000 and the incremental bid is 300 will increase the current bid to 3,500.\n"
-			f"3. What is the maximum amount of custom bid I can place at once?\n"
-			f"  - You can place up to 3 times the current bid (i.e. if the current bid is 3.5m, your custom bid cannot be higher than 10.5m)\n"
-			f"4. What happens when the time ends?\n"
-			f"  - If you are the winner, Aylebot will DM you notifying that you are the winner. Please follow the instructino that it provide to then proceed."
-			f"5. What happens if I waited too long to redeem my auction prize?\n"
-			f"  - After 10 minutes, the auction prize will go to the next person that bids before you.\n",
+			f"Auction has been extended by {str(extend_duration)} (until <t:{auction_new_timestamp}:F>).",
 			ephemeral=True
 		)
 
@@ -413,3 +460,23 @@ class Auction(commands.GroupCog):
 				"There are no participants in this auction.",
 				ephemeral=True
 			)
+
+	@app_commands.command(name="faq", description="Display FAQ for this Aylebot feature.")
+	async def faq(self, interaction: Interaction):
+		await interaction.response.send_message(
+			"# AyleBot Auction FAQ\n"
+			f"1. How do I participate?\n"
+			f"  - Please contact the venue's owner if you would like to be auctioned off.\n"
+			f"2. How do I bid?\n"
+			f"  - To place a bid, press the green \"Bid!\" button to raise the current bid by the increment bid.\n"
+			f"  - To place a bid larger than the current bid, press the \"Custom Bid Amount\" to raise the current bid to a desired amount.\n"
+			f"    - Note: you will need to place a bid that is at least the current bid and incremental bid combined.\n"
+			f"    - Example: using **/auction bid 3500** when the current bid is 3,000 and the incremental bid is 300 will increase the current bid to 3,500.\n"
+			f"3. What is the maximum amount of custom bid I can place at once?\n"
+			f"  - You can place up to 3 times the current bid (i.e. if the current bid is 3.5m, your custom bid cannot be higher than 10.5m)\n"
+			f"4. What happens when the time ends?\n"
+			f"  - If you are the winner, Aylebot will DM you notifying that you are the winner. Please follow the instructino that it provide to then proceed."
+			f"5. What happens if I waited too long to redeem my auction prize?\n"
+			f"  - After 10 minutes, the auction prize will go to the next person that bids before you.\n",
+			ephemeral=True
+		)

@@ -77,8 +77,12 @@ def setup(config_file: str):
 		telemetry_db_cursor = telemetry_db_connection.cursor()
 
 		# create table
-		queue_cursor.execute("CREATE TABLE IF NOT EXISTS queue(thread_id, message_id, user_id, end_time, cc_user, is_reservation)")
-		queue_cursor.execute("CREATE TABLE IF NOT EXISTS auction(thread_id, message_id, notification_id, end_time, bid_increment, bid_current, bid_count, last_bid_user_id)")
+		queue_cursor.execute("CREATE TABLE IF NOT EXISTS queue("
+		                     "thread_id, message_id, user_id, end_time, cc_user, is_reservation"
+		                     ")")
+		queue_cursor.execute("CREATE TABLE IF NOT EXISTS auction("
+		                     "thread_id, auction_info_msg_id, message_id, notification_id, end_time, bid_increment, bid_current, bid_count, last_bid_user_id"
+		                     ")")
 
 		telemetry_db_cursor.execute("create table if not exists room_stats(thread_id, rent_count, extension_count, rent_total_time)")
 

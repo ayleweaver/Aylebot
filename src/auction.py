@@ -32,18 +32,17 @@ def create_auction_history_table(thread_id: int) -> None:
 	config.queue_cursor.execute(f"CREATE TABLE IF NOT EXISTS auction_history_{thread_id}(user_id, bid, current_bid, set_bid)")
 	config.queue_connection.commit()
 
-def get_auction_info(interaction: Interaction, thread: Thread) -> List:
+def get_auction_info(thread: Thread) -> List:
 	"""
 	checking to see if this thread has an auction in it
 	Args:
-		interaction (discord.Interaction): an interaction object
 		thread (discord.Thread): a discord Thread object
 
 	Returns:
 		List - a list of threads containing auction information. Data returned contain: thread id, message id, bid increment, bid count, and last user bid id
 	"""
 	thread_ids = config.queue_cursor.execute(f"""
-							select thread_id, message_id, bid_increment, bid_current, bid_count, last_bid_user_id
+							select *
 							from auction
 							where thread_id = {thread.id}
 						""").fetchall()
@@ -68,48 +67,11 @@ async def auction_task(bot: Bot):
 		keys = res.fetchall()
 		for k in keys:
 			try:
-				thread_id, message_id, announcement_msg_id, end_time, bid_increment, bid_current, bid_count, last_bid_user_id = k
+				thread_id, message_id, _, announcement_msg_id, end_time, bid_increment, bid_current, bid_count, last_bid_user_id = k
 				auction_announcement_chn = await bot.fetch_channel(config.AUCTION_PUBLIC_NOTIFIER_CHANNEL_ID)
 				message: Message = await bot.get_channel(config.AUCTION_CHANNEL_ID).get_thread(thread_id).fetch_message(message_id)
 				channel = await message.guild.fetch_channel(config.AUCTION_CHANNEL_ID)
 				thread = await message.guild.fetch_channel(message.channel.id)
-
-				if last_bid_user_id == -1:
-					# no winner, notify me
-					logger.info(
-						f"Auction {thread_id} completed. "
-						f"[{channel.name} {thread.name}] auction is finalized with [{bid_current:,} Gil]. "
-						f"No Winner."
-					)
-					await bot.get_user(1082827074189930536).send(
-						f"Auction {thread_id} completed.\n"
-						f"[{channel.name} {thread.name}] auction is finalized with [{bid_current:,} Gil].\n"
-						f"No Winner."
-					)
-				else:
-					# notify winner
-					winner_info = bot.get_user(last_bid_user_id)
-					await winner_info.send(
-						f"# :tada: __Congratulations!__ :tada:\n"
-						f"## You are the winner of an auction in the Weaver's Nest!\n\n"
-						f"The final bid was `{bid_current:,}` Gil\n\n"
-						f"Please see the thread **<#{thread_id}>** in the Weaver's Nest **{channel.name} ** channel.\n"
-						f"Please see reception in-game for your payment.\n"
-						f"-# Your claim to your prize expires <t:{int((datetime.now() + timedelta(minutes=10)).timestamp())}:R>. If you do not accept within this timeframe, your prize will go to the next bidder."
-					)
-
-					# notify me
-					await bot.get_user(1082827074189930536).send(
-						f"Auction {thread_id} completed.\n"
-						f"[{channel.name} {thread.name}] auction is finalized with [{bid_current:,} Gil].\n"
-						f"Winner: {winner_info.name} ({winner_info.global_name} | {last_bid_user_id})."
-					)
-
-					logger.info(
-						f"Auction {thread_id} completed. "
-						f"[{channel.name} {thread.name}] auction is finalized with [{bid_current:,} Gil]. "
-						f"Winner: {bot.get_user(last_bid_user_id).name} ({last_bid_user_id})"
-					)
 
 				# remove tags
 				logger.info("Overriding tags to archive")
@@ -128,17 +90,65 @@ async def auction_task(bot: Bot):
 					view=view
 				)
 
-				# remove auction record from master table
-				logger.info("Removing record from master auction table")
-				config.queue_cursor.execute(f"DELETE FROM auction WHERE thread_id = {thread_id}")
-				config.queue_connection.commit()
-
 				# remove all of bot's messages in this thread
 				logger.info("Removing bot messages about the auction")
 				msgs = thread.history()
 				async for m in msgs:
 					if m.author.id == bot.user.id:
 						await m.delete()
+
+				if last_bid_user_id == -1:
+					# no winner, notify me
+					logger.info(
+						f"Auction {thread_id} completed. "
+						f"[{channel.name} {thread.name}] auction is finalized with [{bid_current:,} Gil]. "
+						f"No Winner."
+					)
+					await bot.get_user(1082827074189930536).send(
+						f"Auction {thread_id} completed.\n"
+						f"[{channel.name} {thread.name}] auction is finalized with [{bid_current:,} Gil].\n"
+						f"No Winner."
+					)
+				else:
+					# notify winner
+					winner_info = bot.get_user(last_bid_user_id)
+					try:
+						await winner_info.send(
+							f"# :tada: __Congratulations!__ :tada:\n"
+							f"## You are the winner of an auction in the Weaver's Nest!\n\n"
+							f"The final bid was `{bid_current:,}` Gil\n\n"
+							f"Please see the thread **<#{thread_id}>** in the Weaver's Nest **{channel.name} ** channel.\n"
+							f"Please see reception in-game for your payment.\n"
+							f"-# Your claim to your prize expires <t:{int((datetime.now() + timedelta(minutes=10)).timestamp())}:R>. If you do not accept within this timeframe, your prize will go to the next bidder."
+						)
+					except errors.Forbidden:
+						# cannot dm user (usually permission)
+						await thread.send(
+							f"# :tada: __Congratulations <@{last_bid_user_id}>!__ :tada:\n"
+							f"## You are the winner of an auction in the Weaver's Nest!\n\n"
+							f"The final bid was `{bid_current:,}` Gil\n\n"
+							f"Please see the thread **<#{thread_id}>** in the Weaver's Nest **{channel.name} ** channel.\n"
+							f"Please see reception in-game for your payment.\n"
+							f"-# Your claim to your prize expires <t:{int((datetime.now() + timedelta(minutes=10)).timestamp())}:R>. If you do not accept within this timeframe, your prize will go to the next bidder."
+						)
+
+					# notify me
+					await bot.get_user(1082827074189930536).send(
+						f"Auction {thread_id} completed.\n"
+						f"[{channel.name} {thread.name}] auction is finalized with [{bid_current:,} Gil].\n"
+						f"Winner: {winner_info.name} ({winner_info.global_name} | {last_bid_user_id})."
+					)
+
+					logger.info(
+						f"Auction {thread_id} completed. "
+						f"[{channel.name} {thread.name}] auction is finalized with [{bid_current:,} Gil]. "
+						f"Winner: {bot.get_user(last_bid_user_id).name} ({last_bid_user_id})"
+					)
+
+				# remove auction record from master table
+				logger.info("Removing record from master auction table")
+				config.queue_cursor.execute(f"DELETE FROM auction WHERE thread_id = {thread_id}")
+				config.queue_connection.commit()
 
 				# post some auction stats
 				logger.info("Posting post-auction stats")
