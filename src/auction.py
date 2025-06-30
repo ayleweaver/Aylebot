@@ -32,23 +32,43 @@ def create_auction_history_table(thread_id: int) -> None:
 	config.queue_cursor.execute(f"CREATE TABLE IF NOT EXISTS auction_history_{thread_id}(user_id, bid, current_bid, set_bid)")
 	config.queue_connection.commit()
 
-def get_auction_info(thread: Thread) -> List:
+def get_auction_info(thread: Thread, columns: List=None) -> List:
 	"""
 	checking to see if this thread has an auction in it
 	Args:
 		thread (discord.Thread): a discord Thread object
 
 	Returns:
-		List - a list of threads containing auction information. Data returned contain: thread id, message id, bid increment, bid count, and last user bid id
+		List - a list of threads containing auction information.
 	"""
+
 	thread_ids = config.queue_cursor.execute(f"""
-							select *
+							select {'*' if columns is None else 'auction.'+','.join(columns)}
 							from auction
-							where thread_id = {thread.id}
+							join auction_info as b
+							on auction.thread_id = b.thread_id
+							where auction.thread_id = {thread.id}
 						""").fetchall()
 	if len(thread_ids) == 0:
 		return []
 	return thread_ids
+
+def remove_auction(thread_id: int):
+	"""
+	remove auction information from database
+	Args:
+		thread_id (int): discord thread id
+
+	Returns:
+
+	"""
+
+	# remove auction from master auction tables
+	config.queue_cursor.execute(f"DELETE FROM auction WHERE thread_id = {thread_id}")
+	config.queue_cursor.execute(f"DELETE FROM auction_info WHERE thread_id = {thread_id}")
+	# remove history_table
+	config.queue_cursor.execute(f"drop table auction_history_{thread_id}")
+	config.queue_connection.commit()
 
 async def auction_task(bot: Bot):
 	"""
@@ -67,7 +87,9 @@ async def auction_task(bot: Bot):
 		keys = res.fetchall()
 		for k in keys:
 			try:
-				thread_id, message_id, _, announcement_msg_id, end_time, bid_increment, bid_current, bid_count, last_bid_user_id = k
+				thread_id, end_time, bid_increment, bid_current, bid_count, last_bid_user_id = k
+				_, auction_msg_info_id, message_id, announcement_msg_id = config.queue_cursor.execute(f"SELECT * FROM auction_info where thread_id = {thread_id}").fetchone()
+
 				auction_announcement_chn = await bot.fetch_channel(config.AUCTION_PUBLIC_NOTIFIER_CHANNEL_ID)
 				message: Message = await bot.get_channel(config.AUCTION_CHANNEL_ID).get_thread(thread_id).fetch_message(message_id)
 				channel = await message.guild.fetch_channel(config.AUCTION_CHANNEL_ID)
@@ -148,6 +170,7 @@ async def auction_task(bot: Bot):
 				# remove auction record from master table
 				logger.info("Removing record from master auction table")
 				config.queue_cursor.execute(f"DELETE FROM auction WHERE thread_id = {thread_id}")
+				config.queue_cursor.execute(f"DELETE FROM auction_info WHERE thread_id = {thread_id}")
 				config.queue_connection.commit()
 
 				# post some auction stats

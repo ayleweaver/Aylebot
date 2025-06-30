@@ -30,11 +30,12 @@ class Bot(commands.Bot):
 
 	async def setup_hook(self) -> None:
 		active_auctions = config.queue_cursor.execute(f"""
-				select thread_id, message_id, bid_increment, bid_current
+				select auction_info.message_id
 				from auction
+				join auction_info where auction.thread_id = auction_info.thread_id;
 			""").fetchall()
 
-		for _, msg_id, _, _ in active_auctions:
+		for message_id in active_auctions:
 			self.add_view(BidView())
 
 		self.queue_checker.start()

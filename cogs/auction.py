@@ -9,7 +9,8 @@ from icecream import ic
 from logger import logger
 from typing import List
 from src.misc import number_abbreviation_parser, parse_duration
-from src.auction import create_auction_history_table, get_auction_info
+from src.auction import create_auction_history_table, get_auction_info, remove_auction
+
 
 #####################################################################
 # DISCORD VIEWS
@@ -98,7 +99,7 @@ async def _place_bid(interaction: Interaction, bid_amount: str=""):
 	"""
 	thread = await interaction.guild.fetch_channel(interaction.channel_id)
 	# checking to see if this thread has an auction in it
-	auction_data = get_auction_info(thread)
+	auction_data = get_auction_info(thread, ["bid_increment", "bid_current", "bid_count", "last_bid_user_id", "message_id"])
 	if not auction_data:
 		await interaction.response.send_message(
 			"There is no auction in this thread. Please navigate to an active auction.",
@@ -107,7 +108,7 @@ async def _place_bid(interaction: Interaction, bid_amount: str=""):
 		return
 
 	# parsing bid
-	_, _, msg_id, _, _, bid_increment, bid_current, bid_count, last_bid_user_id = auction_data[0]
+	bid_increment, bid_current, bid_count, last_bid_user_id, msg_id= auction_data[0]
 	set_fix_value = False
 
 	# checking to see if user was the last person who place a bid
@@ -211,6 +212,7 @@ async def _place_bid(interaction: Interaction, bid_amount: str=""):
 			"Fatal error has occurred. Current price message is not found.\n"
 			"-# Paging <@1082827074189930536>"
 		)
+		return
 	await msg_to_edit[0].edit(
 		content=f"Current bid: `{new_bid_value:,}` Gil\n"
 		        f"{bid_count+1} Bid{'' if bid_count+1 == 1 else 's'}"
@@ -253,7 +255,7 @@ class Auction(commands.GroupCog):
 		)
 
 		# checking to see if this thread has an auction in it
-		if get_auction_info(thread):
+		if get_auction_info(thread, ["thread_id"]):
 			await interaction.response.send_message(
 				"There is an active auction going on. Please wait until the auction ends.",
 				ephemeral=True
@@ -301,9 +303,13 @@ class Auction(commands.GroupCog):
 
 		# add entry to table
 		config.queue_cursor.execute(f"""
-			INSERT INTO auction (thread_id, auction_info_msg_id, message_id, notification_id, end_time, bid_increment, bid_current, bid_count, last_bid_user_id)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-		""", (thread.id, auction_info_msg.id, msg.id, notification_msg.id, auction_endtime_timestamp, bid_increment, starting_bid, 0, -1))
+			INSERT INTO auction (thread_id, end_time, bid_increment, bid_current, bid_count, last_bid_user_id)
+			VALUES (?, ?, ?, ?, ?, ?)
+		""", (thread.id, auction_endtime_timestamp, bid_increment, starting_bid, 0, -1))
+		config.queue_cursor.execute(f"""
+			INSERT INTO auction_info (thread_id, auction_info_msg_id, message_id, notification_id)
+			VALUES (?, ?, ?, ?)
+		""", (thread.id, auction_info_msg.id, msg.id, notification_msg.id))
 		config.queue_connection.commit()
 
 		# initialize history table
@@ -323,7 +329,7 @@ class Auction(commands.GroupCog):
 		channel = await interaction.guild.fetch_channel(config.AUCTION_CHANNEL_ID)
 		thread = await interaction.guild.fetch_channel(interaction.channel_id)
 		# checking to see if this thread has an auction in it
-		thread_ids = get_auction_info(thread)
+		thread_ids = get_auction_info(thread, ['thread_id'])
 		if not thread_ids:
 			await interaction.response.send_message(
 				"There is no auction in this thread. Please navigate to an active auction.",
@@ -345,11 +351,7 @@ class Auction(commands.GroupCog):
 		if delete_confirmation.value is None:
 			logger.warning("delete_confirmation has timed out.")
 		elif delete_confirmation.value:
-			# remove auction from master auction table
-			config.queue_cursor.execute(f"DELETE FROM auction WHERE thread_id = {thread.id}")
-			# remove history_table
-			config.queue_cursor.execute(f"drop table auction_history_{thread.id}")
-			config.queue_connection.commit()
+			remove_auction(thread.id)
 
 			# remove tags
 			await thread.override_tags()
@@ -373,7 +375,16 @@ class Auction(commands.GroupCog):
 		thread = await interaction.guild.fetch_channel(interaction.channel_id)
 
 		# check if auction is actually active in backend
-		auction_data = get_auction_info(thread)
+		auction_data = get_auction_info(thread, [
+			"thread_id",
+			"auction_info_msg_id",
+			"message_id",
+			"notification_id",
+			"end_time",
+			"bid_increment",
+			"bid_current",
+			"bid_count",
+		])
 		if not auction_data:
 			logger.warning(f"Auction {thread.id} does not exists in database.")
 
@@ -391,7 +402,7 @@ class Auction(commands.GroupCog):
 			)
 			return
 
-		thread_id, auction_info_msg_id, msg_id, notification_id, end_time, bid_increment, current_bid, bid_count, _ = auction_data[0]
+		thread_id, auction_info_msg_id, msg_id, notification_id, end_time, bid_increment, current_bid, bid_count = auction_data[0]
 
 		extend_duration, auction_new_timestamp = parse_duration(duration, datetime.fromtimestamp(end_time))
 
