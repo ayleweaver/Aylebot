@@ -19,7 +19,7 @@ async def auto_complete_time(interaction: Interaction, current: str) -> List[app
 	]
 	return [app_commands.Choice(name=choice_name, value=choice_value) for choice_name, choice_value in time_choices]
 
-class Room(commands.Cog):
+class Room(commands.GroupCog):
 	def __init__(self, client, forum_id, room_status_tag_id, room_type_tag_id):
 		self.client = client
 		self.forum_id = forum_id
