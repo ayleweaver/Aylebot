@@ -13,6 +13,8 @@ from src import auto_reception
 #
 async def trigger_event(bot: Client, event: str):
 	if event in config.EVENTS_TRIGGER:
+		# note: does not stop event from triggering again
+		# TODO: add optional argument to here and /trigger to bypass time based triggers (i.e. set event triggeed to true)
 		target_channel: TextChannel = await bot.fetch_channel(config.NOTIFICATION_CHANNEL_ID)
 		m = config.EVENTS_TRIGGER[event]["message"]
 		if len(config.EVENTS_TRIGGER[event]['remindee']) > 0:
