@@ -43,13 +43,18 @@ class CheckGroup(app_commands.Group):
 
 		# change to raw
 		m += "```"
-		m += f"[{'checkout time':^13}] | [Room]\n"
-		m += ("-"*15) + "-|-" + ("-"*13)
+		m += f"[{'checkout time':^13}] | [Room] | [CC]\n"
+		m += ("-"*15) + "-|-" + ("-"*13) + "-|-" + ("-" * 13)
 		m += "\n"
-		for thread_id, message_id, user_id, end_time, cc_user in checkin_queue:
+		for thread_id, message_id, user_id, end_time, cc_user_id, is_reservation in checkin_queue:
 			thread_name = interaction.guild.get_thread(thread_id).name
+			cc_user = interaction.client.get_user(cc_user_id)
 			m += (f"[{datetime.strftime(datetime.fromtimestamp(end_time), '%I:%M:%S %p %z %Z')}] | "
-			      f"{thread_name}\n")
+			      f"{thread_name} | ")
+			if cc_user is not None:
+				m += f"{cc_user.name} ({cc_user.display_name})"
+
+			m += "\n"
 		m += "```"
 		await interaction.response.send_message(m)
 
