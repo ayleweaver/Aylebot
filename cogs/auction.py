@@ -51,11 +51,11 @@ class CustomBidModel(discord.ui.Modal, title='Auction Bid'):
 		thread = await interaction.guild.fetch_channel(interaction.channel_id)
 		# checking to see if this thread has an auction in it
 		thread_ids = config.queue_cursor.execute(f"""
-				select thread_id, message_id, bid_increment, bid_current
+				select thread_id, bid_increment, bid_current
 				from auction
 				where thread_id = {thread.id}
 			""").fetchall()
-		_, message_id, bid_increment, bid_current = thread_ids[0]
+		_, bid_increment, bid_current = thread_ids[0]
 
 		if number_abbreviation_parser(self.bid_amount_input.value) > bid_current * 3:
 			await interaction.response.send_message(f"You cannot bid more than 3 times the current bid!\nMaximum bid right now: `{bid_current*3:,}` Gil", ephemeral=True)
@@ -71,7 +71,6 @@ class BidView(ui.View):
 	def __init__(self):
 		super().__init__(timeout=None)
 
-	# TODO: make view presist. See https://github.com/Rapptz/discord.py/blob/v2.5.2/examples/views/persistent.py
 	@ui.button(label='Bid!', style=ButtonStyle.green, custom_id=f"persistent_button_bid")
 	async def bid(self, interaction: discord.Interaction, button: discord.ui.Button):
 		# await interaction.response.send_message("bidded!")
@@ -213,13 +212,36 @@ async def _place_bid(interaction: Interaction, bid_amount: str=""):
 			"-# Paging <@1082827074189930536>"
 		)
 		return
+
+	notification_channels = get_auction_info(thread, ["notification_id", "end_time"])
+	if len(notification_channels) == 0:
+		await interaction.channel.send(
+			"An error has occurred. Current price message is not found.\n"
+			"-# Paging <@1082827074189930536>"
+		)
+		return
+	if len(notification_channels) == 1:
+		auction_announcement_chn = await interaction.guild.fetch_channel(config.AUCTION_PUBLIC_NOTIFIER_CHANNEL_ID)
+		history = auction_announcement_chn.history()
+		chn_id, end_time = notification_channels[0]
+
+		_, end_time = parse_duration(end_time, datetime.fromtimestamp(end_time))
+		
+		msg = [m async for m in history if m.id == chn_id][0]
+		await msg.edit(content=
+           f"## An auction has been extended!\n"
+           f"<#{thread.id}>. Currently at `{new_bid_value:,}` Gil.\n"
+           f"Ends on <t:{end_time}:f> (<t:{end_time}:R>)\n"
+           f"-# <@&{config.ROLE_NOTIFICATION_ID['auction']}>"
+       )
+
 	await msg_to_edit[0].edit(
 		content=f"Current bid: `{new_bid_value:,}` Gil\n"
 		        f"{bid_count+1} Bid{'' if bid_count+1 == 1 else 's'}"
 	)
 
 # table columns:
-# thread_id, message_id, end_time, bid_increment, bid_current, last_bid_user_id
+# thread_id,  end_time, bid_increment, bid_current, last_bid_user_id
 
 
 #####################################################################
@@ -422,9 +444,9 @@ class Auction(commands.GroupCog):
 		msg = [m async for m in history if m.id == notification_id][0]
 		await msg.edit(content=
 			f"## An auction has been extended!\n"
-			f"<#{thread.id}>. Current at `{current_bid:,}` Gil.\n"
+			f"<#{thread.id}>. Currently at `{current_bid:,}` Gil.\n"
 			f"Ends on <t:{auction_new_timestamp}:f> (<t:{auction_new_timestamp}:R>)\n"
-			f"-# <@&{config.ROLE_NOTIFICATION_ID['auction']}"
+			f"-# <@&{config.ROLE_NOTIFICATION_ID['auction']}>"
         )
 
 		# updating the auction master table

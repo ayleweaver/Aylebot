@@ -120,13 +120,13 @@ async def auction_task(bot: Bot):
 						await m.delete()
 
 				if last_bid_user_id == -1:
-					# no winner, notify me
+					# no winner, notify owner of discord server
 					logger.info(
 						f"Auction {thread_id} completed. "
 						f"[{channel.name} {thread.name}] auction is finalized with [{bid_current:,} Gil]. "
 						f"No Winner."
 					)
-					await bot.get_user(1082827074189930536).send(
+					await bot.get_user(message.guild.owner_id).send(
 						f"Auction {thread_id} completed.\n"
 						f"[{channel.name} {thread.name}] auction is finalized with [{bid_current:,} Gil].\n"
 						f"No Winner."

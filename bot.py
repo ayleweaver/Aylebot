@@ -35,6 +35,8 @@ class Bot(commands.Bot):
 				join auction_info where auction.thread_id = auction_info.thread_id;
 			""").fetchall()
 
+		# set up known auctions to the bot to interact with
+		# in the case when the bot was restarted
 		for message_id in active_auctions:
 			self.add_view(BidView())
 
