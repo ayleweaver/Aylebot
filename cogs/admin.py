@@ -5,8 +5,11 @@ from datetime import datetime
 from discord import app_commands, Interaction, Client, TextChannel, Message
 from discord.ext import commands
 from logger import logger
+from tabulate import tabulate
 from typing import List
 from pathlib import Path
+
+from src.misc import number_suffix
 
 from src import auto_reception
 
@@ -33,11 +36,51 @@ async def trigger_event(bot: Client, event: str, set_event:bool=False):
 
 		await target_channel.send(m)
 
+		# hard coded this event
+		# TODO: create more dynamic way for this
+		if event == "close":
+			await send_nightly_report(bot)
+
 		logger.info(f"Triggering event [{event}]")
 		if set_event:
 			logger.info(f"Event [{event}] is now true")
 			config.EVENTS_TRIGGER[event]["triggered"] = True
 
+async def send_nightly_report(bot: Client):
+	"""
+	Send a nightly report message to the bot and clears the nighty reporting table
+
+	Args:
+		bot (Client): The discord client object
+
+	Returns:
+		None
+	"""
+
+	target_channel: TextChannel = await bot.fetch_channel(config.NOTIFICATION_CHANNEL_ID)
+	report = config.queue_cursor.execute("SELECT * FROM queue_report").fetchall()
+	today = datetime.today()
+
+	tabulate_table = []
+
+	m = f"# Nighty report for {today.strftime('%A, %B')} {number_suffix(today.day)}\n"
+	m += "```"
+	ROOM_RATE = 25_000
+	total = 0
+	total_hours = 0
+	for thread_id, hours in report:
+		thread_name = bot.get_channel(thread_id).name
+		room_total = int(ROOM_RATE * hours)
+
+		tabulate_table.append([thread_name, hours, room_total])
+		total += room_total
+		total_hours += hours
+	tabulate_table.append(["-"*16, "-"*8, "-"*10])
+	tabulate_table.append(["Sum Total", total_hours, total])
+
+	m += f"{tabulate(tabulate_table, headers=['Room', 'Hours', 'Night Total'])}"
+	m += "```"
+	await target_channel.send(m)
 #
 # DISCORD COMMANDS
 #
@@ -56,20 +99,19 @@ class CheckGroup(app_commands.Group):
 		m = f"**Current queue has {len(checkin_queue)} items**\n"
 
 		# change to raw
-		m += "```"
-		m += f"[{'checkout time':^13}] | [Room] | [CC]\n"
-		m += ("-"*15) + "-|-" + ("-"*13) + "-|-" + ("-" * 13)
-		m += "\n"
+		tabulate_table = []
+		table_title = ["Room", "Checkout Time", "CC User"]
 		for thread_id, message_id, user_id, end_time, cc_user_id, is_reservation in checkin_queue:
 			thread_name = interaction.guild.get_thread(thread_id).name
 			cc_user = interaction.client.get_user(cc_user_id)
-			m += (f"[{datetime.strftime(datetime.fromtimestamp(end_time), '%I:%M:%S %p %z %Z')}] | "
-			      f"{thread_name} | ")
-			if cc_user is not None:
-				m += f"{cc_user.name} ({cc_user.display_name})"
 
-			m += "\n"
-		m += "```"
+			end_date = datetime.strftime(datetime.fromtimestamp(end_time), '%I:%M:%S %p %z %Z')
+
+			tabulate_table.append([
+				thread_name, end_date, f"{cc_user.name} ({cc_user.display_name})" if cc_user else None
+			])
+
+		m += f"```{tabulate(tabulate_table, headers=table_title)}```"
 		await interaction.response.send_message(m)
 
 
@@ -96,6 +138,8 @@ class Misc(commands.Cog):
 
 	@commands.Cog.listener()
 	async def on_message(self, message: Message):
+
+		# setup honey pot
 		if message.channel.id == config.HONEYPOT_CHANNEL_ID:
 			author = message.author
 			message_time = message.created_at

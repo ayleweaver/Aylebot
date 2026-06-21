@@ -72,18 +72,29 @@ def extension(thread_id: int, duration: timedelta) -> None:
 
 	old_message_id, old_end_time = thread_data[0]
 	new_end_duration = round((datetime.fromtimestamp(old_end_time) + duration).timestamp())
+	# update room occupation with new time
 	config.queue_cursor.execute(f"""
 		update queue
 		set 
 			end_time = {new_end_duration}
 		where thread_id = {thread_id}
 	""")
+
+	# add new duration to telemetry
 	config.telemetry_db_cursor.execute(f"""
 		update room_stats
 		set
 			extension_count = extension_count+1,
 			rent_total_time = rent_total_time + {duration.total_seconds() / 3600}
 		where thread_id = {thread_id}
+	""")
+
+	# no need to check, if extension, then an entry should already exists
+	config.queue_cursor.execute(f"""
+	update queue_report
+	set
+		hours = hours+{duration.total_seconds() / 3600}
+	where thread_id = {thread_id}
 	""")
 	config.queue_connection.commit()
 	config.telemetry_db_connection.commit()
@@ -93,10 +104,28 @@ def check_in(data: CheckInData):
 	global _queue_size
 	_queue_size += 1
 
+	# add a new entry to the list
 	config.queue_cursor.execute(f"""
 		INSERT INTO queue (thread_id, message_id, user_id, end_time, cc_user, is_reservation)
 		VALUES (?, ?, ?, ?, ?, ?)
 	""", (data.thread_id, data.message.id, data.user_id, data.end_time, data.cc_user_id, data.is_reservation))
+
+	# nighty report insertion / updates
+	if config.queue_cursor.execute(f"select exists(select 1 from queue_report where thread_id={data.thread_id} limit 1)").fetchone()[0]:
+		# no need to check, if extension, then an entry should already exists
+		config.queue_cursor.execute(f"""
+			update queue_report
+			set
+				hours = hours+{data.duration / 3600}
+			where thread_id = {data.thread_id}
+		""")
+	else:
+		config.queue_cursor.execute(f"""
+			insert into queue_report(thread_id, hours)
+			values (?, ?)
+		""", (data.thread_id, data.duration / 3600))
+
+
 	config.queue_connection.commit()
 
 	# check telemetry entry if it is created

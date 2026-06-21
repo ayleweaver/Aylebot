@@ -16,7 +16,7 @@ def number_abbreviation_parser(value: str):
 
 		return int((group_dict['millions'] * 1000000) + (group_dict['thousands'] * 1000) + (group_dict['ones']))
 	except ValueError:
-		logger.warn(f"number abbreviation parser cannot parse input value {value}")
+		logger.warning(f"number abbreviation parser cannot parse input value {value}")
 		return None
 
 def parse_duration(duration: str, current_time: datetime=None):
@@ -38,3 +38,16 @@ def parse_duration(duration: str, current_time: datetime=None):
 	timestamp = int(((datetime.now() if current_time is None else current_time) + d).timestamp())
 
 	return d, timestamp
+
+def number_suffix(value: int):
+	if (value // 10) % 10 == 1:
+		return f"{value}th"
+
+	if value % 10 == 1:
+		return f"{value}st"
+	elif value % 10 == 2:
+		return f"{value}nd"
+	elif value % 10 == 3:
+		return f"{value}rd"
+
+	return f"{value}th"
