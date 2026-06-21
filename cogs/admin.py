@@ -80,6 +80,9 @@ async def send_nightly_report(bot: Client):
 
 	m += f"{tabulate(tabulate_table, headers=['Room', 'Hours', 'Night Total'])}"
 	m += "```"
+
+	config.queue_cursor.execute("delete from queue_report;")
+
 	await target_channel.send(m)
 #
 # DISCORD COMMANDS
