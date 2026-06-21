@@ -82,6 +82,7 @@ async def send_nightly_report(bot: Client):
 	m += "```"
 
 	config.queue_cursor.execute("delete from queue_report;")
+	config.queue_connection.commit()
 
 	await target_channel.send(m)
 #
