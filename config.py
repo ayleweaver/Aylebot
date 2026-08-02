@@ -13,12 +13,13 @@ class ENVIRONMENT(IntEnum):
 
 CURRENT_ENV = ENVIRONMENT.LIVE
 BOT_TOKEN = ""
-NOTIFICATION_CHANNEL_ID = 0
-FORUM_CHANNEL_ID = 0
-AUCTION_CHANNEL_ID = 0
-AUCTION_PUBLIC_NOTIFIER_CHANNEL_ID = 0
-HONEYPOT_CHANNEL_ID = 0
-ROLE_NOTIFICATION_ID = {}
+CHANNEL_ID_NOTIFICATION = 0
+CHANNEL_ID_FORM = 0
+CHANNEL_ID_AUCTION = 0
+CHANNEL_ID_AUCTION_PUBLIC = 0
+CHANNEL_ID_HONEYPOT = 0
+CHANNEL_ID_PRIVATE_JOB_APPLICATION = 0
+NOTIFICATION_ID_ROLE = {}
 ROOM_STATUS_TAGS = {}
 AUCTION_STATUS_TAGS = {}
 ROOM_TYPE_TAGS = {}
@@ -33,10 +34,10 @@ telemetry_db_connection = None
 telemetry_db_cursor = None
 
 def setup(config_file: str):
-	global BOT_TOKEN, FORUM_CHANNEL_ID, ROOM_STATUS_TAGS, ROOM_TYPE_TAGS, NOTIFICATION_CHANNEL_ID, AUCTION_CHANNEL_ID, AUCTION_STATUS_TAGS
-	global HONEYPOT_CHANNEL_ID
-	global ROLE_NOTIFICATION_ID, TELEMETRY_DB_NAME
-	global EVENTS_TRIGGER, ROOM_SELECT_DEFAULT_FREQUENCY_TIME, ROOM_SELECT_DEFAULT_FREQUENCY_COUNT, CURRENT_ENV, AUCTION_PUBLIC_NOTIFIER_CHANNEL_ID
+	global BOT_TOKEN, CHANNEL_ID_FORM, ROOM_STATUS_TAGS, ROOM_TYPE_TAGS, CHANNEL_ID_NOTIFICATION, CHANNEL_ID_AUCTION, AUCTION_STATUS_TAGS
+	global CHANNEL_ID_HONEYPOT, CHANNEL_ID_PRIVATE_JOB_APPLICATION
+	global NOTIFICATION_ID_ROLE, TELEMETRY_DB_NAME
+	global EVENTS_TRIGGER, ROOM_SELECT_DEFAULT_FREQUENCY_TIME, ROOM_SELECT_DEFAULT_FREQUENCY_COUNT, CURRENT_ENV, CHANNEL_ID_AUCTION_PUBLIC
 	global DB_NAME, queue_connection, queue_cursor, telemetry_db_connection, telemetry_db_cursor
 
 	logger.info(f"Bot is using config file: {config_file}")
@@ -49,12 +50,14 @@ def setup(config_file: str):
 			else:
 				CURRENT_ENV = ENVIRONMENT.LIVE
 		BOT_TOKEN = data['bot_token']
-		NOTIFICATION_CHANNEL_ID = data['channel_id']['notifier']
-		FORUM_CHANNEL_ID = data['channel_id']['room']
-		AUCTION_CHANNEL_ID = data['channel_id']['auction']
-		HONEYPOT_CHANNEL_ID = data['channel_id']['honeypot']
-		ROLE_NOTIFICATION_ID = data['role_notification_id']
-		AUCTION_PUBLIC_NOTIFIER_CHANNEL_ID = data['channel_id']['auction_public_notifier']
+		CHANNEL_ID_NOTIFICATION = data['channel_id']['notifier']
+		CHANNEL_ID_FORM = data['channel_id']['room']
+		CHANNEL_ID_AUCTION = data['channel_id']['auction']
+		CHANNEL_ID_HONEYPOT = data['channel_id']['honeypot']
+		CHANNEL_ID_AUCTION_PUBLIC = data['channel_id']['auction_public_notifier']
+		CHANNEL_ID_PRIVATE_JOB_APPLICATION = data['channel_id']['private_job_application']
+		NOTIFICATION_ID_ROLE = data['role_notification_id']
+
 		AUCTION_STATUS_TAGS = data['thread_status_tags']['auction']
 		ROOM_STATUS_TAGS = data['thread_status_tags']['room']
 		ROOM_TYPE_TAGS = data['thread_status_tags']['room_type']
@@ -68,7 +71,7 @@ def setup(config_file: str):
 
 		assert len(ROOM_STATUS_TAGS) > 0, "No status tags, set your tag in config.yml"
 		assert len(ROOM_TYPE_TAGS) > 0, "No type tags, set your tag in config.yml"
-		assert FORUM_CHANNEL_ID, "No channel ID, set your channel ID in config.yml"
+		assert CHANNEL_ID_FORM, "No channel ID, set your channel ID in config.yml"
 
 		# establishing database connection
 		if CURRENT_ENV == ENVIRONMENT.TESTING:

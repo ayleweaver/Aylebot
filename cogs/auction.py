@@ -221,7 +221,7 @@ async def _place_bid(interaction: Interaction, bid_amount: str=""):
 		)
 		return
 	if len(notification_channels) == 1:
-		auction_announcement_chn = await interaction.guild.fetch_channel(config.AUCTION_PUBLIC_NOTIFIER_CHANNEL_ID)
+		auction_announcement_chn = await interaction.guild.fetch_channel(config.CHANNEL_ID_AUCTION_PUBLIC)
 		history = auction_announcement_chn.history()
 		chn_id, end_time = notification_channels[0]
 
@@ -232,7 +232,7 @@ async def _place_bid(interaction: Interaction, bid_amount: str=""):
            f"## An auction has been extended!\n"
            f"<#{thread.id}>. Currently at `{new_bid_value:,}` Gil.\n"
            f"Ends on <t:{end_time}:f> (<t:{end_time}:R>)\n"
-           f"-# <@&{config.ROLE_NOTIFICATION_ID['auction']}>"
+           f"-# <@&{config.NOTIFICATION_ID_ROLE['auction']}>"
        )
 
 	await msg_to_edit[0].edit(
@@ -261,7 +261,7 @@ class Auction(commands.GroupCog):
 		test_bid="Test bid, does not notify auction role"
 	)
 	async def begin(self, interaction: Interaction, duration: str, starting_bid: str, bid_increment: str, test_bid:bool=False):
-		channel = await interaction.guild.fetch_channel(config.AUCTION_CHANNEL_ID)
+		channel = await interaction.guild.fetch_channel(config.CHANNEL_ID_AUCTION)
 		thread = await interaction.guild.fetch_channel(interaction.channel_id)
 
 		if config.AUCTION_STATUS_TAGS['ready'] not in [t.id for t in thread.applied_tags]:
@@ -302,7 +302,7 @@ class Auction(commands.GroupCog):
 		)
 
 		# send notification
-		chn = await self.bot.fetch_channel(config.AUCTION_PUBLIC_NOTIFIER_CHANNEL_ID)
+		chn = await self.bot.fetch_channel(config.CHANNEL_ID_AUCTION_PUBLIC)
 		notification_msg_content = (
 			f"## A new auction as started!\n"
 			f"<#{thread.id}>. Starting at `{starting_bid:,}` Gil.\n"
@@ -312,7 +312,7 @@ class Auction(commands.GroupCog):
 		if test_bid:
 			notification_msg_content += "-# This is a test bid, please ignore."
 		else:
-			notification_msg_content += f"-# <@&{config.ROLE_NOTIFICATION_ID['auction']}>"
+			notification_msg_content += f"-# <@&{config.NOTIFICATION_ID_ROLE['auction']}>"
 
 		notification_msg = await chn.send(
 			notification_msg_content
@@ -348,7 +348,7 @@ class Auction(commands.GroupCog):
 	@app_commands.command(name="cancel", description="Cancel this auction")
 	@app_commands.checks.has_permissions(administrator=True)
 	async def cancel(self, interaction: Interaction, cancel_reason: str):
-		channel = await interaction.guild.fetch_channel(config.AUCTION_CHANNEL_ID)
+		channel = await interaction.guild.fetch_channel(config.CHANNEL_ID_AUCTION)
 		thread = await interaction.guild.fetch_channel(interaction.channel_id)
 		# checking to see if this thread has an auction in it
 		thread_ids = get_auction_info(thread, ['thread_id'])
@@ -393,7 +393,7 @@ class Auction(commands.GroupCog):
 	@app_commands.command(name="extend", description="Extends the duration of this auction")
 	@app_commands.checks.has_permissions(administrator=True)
 	async def extend(self, interaction: Interaction, duration: str):
-		channel = await interaction.guild.fetch_channel(config.AUCTION_CHANNEL_ID)
+		channel = await interaction.guild.fetch_channel(config.CHANNEL_ID_AUCTION)
 		thread = await interaction.guild.fetch_channel(interaction.channel_id)
 
 		# check if auction is actually active in backend
@@ -439,14 +439,14 @@ class Auction(commands.GroupCog):
 		)
 
 		# modifying announcement message
-		auction_announcement_chn = await interaction.guild.fetch_channel(config.AUCTION_PUBLIC_NOTIFIER_CHANNEL_ID)
+		auction_announcement_chn = await interaction.guild.fetch_channel(config.CHANNEL_ID_AUCTION_PUBLIC)
 		history = auction_announcement_chn.history()
 		msg = [m async for m in history if m.id == notification_id][0]
 		await msg.edit(content=
 			f"## An auction has been extended!\n"
 			f"<#{thread.id}>. Currently at `{current_bid:,}` Gil.\n"
 			f"Ends on <t:{auction_new_timestamp}:f> (<t:{auction_new_timestamp}:R>)\n"
-			f"-# <@&{config.ROLE_NOTIFICATION_ID['auction']}>"
+			f"-# <@&{config.NOTIFICATION_ID_ROLE['auction']}>"
         )
 
 		# updating the auction master table

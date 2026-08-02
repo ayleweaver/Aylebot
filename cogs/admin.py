@@ -29,7 +29,7 @@ async def trigger_event(bot: Client, event: str, set_event:bool=False):
 		None
 	"""
 	if event in config.EVENTS_TRIGGER:
-		target_channel: TextChannel = await bot.fetch_channel(config.NOTIFICATION_CHANNEL_ID)
+		target_channel: TextChannel = await bot.fetch_channel(config.CHANNEL_ID_NOTIFICATION)
 		m = config.EVENTS_TRIGGER[event]["message"]
 		if len(config.EVENTS_TRIGGER[event]['remindee']) > 0:
 			m += "\n-# Also paging " + ', '.join(f"<@&{remindee}>" for remindee in config.EVENTS_TRIGGER[event]['remindee'])
@@ -57,7 +57,7 @@ async def send_nightly_report(bot: Client):
 		None
 	"""
 
-	target_channel: TextChannel = await bot.fetch_channel(config.NOTIFICATION_CHANNEL_ID)
+	target_channel: TextChannel = await bot.fetch_channel(config.CHANNEL_ID_NOTIFICATION)
 	report = config.queue_cursor.execute("SELECT * FROM queue_report").fetchall()
 	today = datetime.today()
 
@@ -144,7 +144,7 @@ class Misc(commands.Cog):
 	async def on_message(self, message: Message):
 
 		# setup honey pot
-		if message.channel.id == config.HONEYPOT_CHANNEL_ID:
+		if message.channel.id == config.CHANNEL_ID_HONEYPOT:
 			author = message.author
 			message_time = message.created_at
 

@@ -90,9 +90,9 @@ async def auction_task(bot: Bot):
 				thread_id, end_time, bid_increment, bid_current, bid_count, last_bid_user_id = k
 				_, auction_msg_info_id, message_id, announcement_msg_id = config.queue_cursor.execute(f"SELECT * FROM auction_info where thread_id = {thread_id}").fetchone()
 
-				auction_announcement_chn = await bot.fetch_channel(config.AUCTION_PUBLIC_NOTIFIER_CHANNEL_ID)
-				message: Message = await bot.get_channel(config.AUCTION_CHANNEL_ID).get_thread(thread_id).fetch_message(message_id)
-				channel = await message.guild.fetch_channel(config.AUCTION_CHANNEL_ID)
+				auction_announcement_chn = await bot.fetch_channel(config.CHANNEL_ID_AUCTION_PUBLIC)
+				message: Message = await bot.get_channel(config.CHANNEL_ID_AUCTION).get_thread(thread_id).fetch_message(message_id)
+				channel = await message.guild.fetch_channel(config.CHANNEL_ID_AUCTION)
 				thread = await message.guild.fetch_channel(message.channel.id)
 
 				# remove tags

@@ -176,8 +176,8 @@ async def room_task(bot):
 		for k in keys:
 			try:
 				thread_id, message_id, user_id, end_time, cc_user, prereservation = k
-				message: Message = await bot.get_channel(config.FORUM_CHANNEL_ID).get_thread(thread_id).fetch_message(message_id)
-				channel = await message.guild.fetch_channel(config.FORUM_CHANNEL_ID)
+				message: Message = await bot.get_channel(config.CHANNEL_ID_FORM).get_thread(thread_id).fetch_message(message_id)
+				channel = await message.guild.fetch_channel(config.CHANNEL_ID_FORM)
 				thread = await message.guild.fetch_channel(message.channel.id)
 
 				await message.delete()
@@ -194,7 +194,7 @@ async def room_task(bot):
 
 				# ping notification channel
 				target_user_id: int = user_id
-				target_channel: TextChannel = await message.guild.fetch_channel(config.NOTIFICATION_CHANNEL_ID)
+				target_channel: TextChannel = await message.guild.fetch_channel(config.CHANNEL_ID_NOTIFICATION)
 				if not prereservation:
 					# normal checkout message, reserved while room is occupied
 					m = (f"<@{target_user_id}>\n" +

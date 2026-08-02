@@ -95,10 +95,11 @@ async def on_message(message: discord.Message):
 
 async def main():
 	# load some stuff
-	await bot.add_cog(Room(bot, config.FORUM_CHANNEL_ID, config.ROOM_STATUS_TAGS, config.ROOM_TYPE_TAGS))
+	await bot.add_cog(Room(bot, config.CHANNEL_ID_FORM, config.ROOM_STATUS_TAGS, config.ROOM_TYPE_TAGS))
 	await bot.add_cog(Check(bot))
 	await bot.add_cog(Misc(bot))
 	await bot.add_cog(Auction(bot))
+	await bot.add_cog(JobApplication(bot))
 
 
 if __name__ == '__main__':
