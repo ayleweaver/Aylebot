@@ -81,6 +81,21 @@ class Room(commands.GroupCog):
 		start_time: datetime = interaction.created_at
 		end_time: datetime = start_time + duration
 
+		if self.room_status_tag_id["occupied_admin"] in thread._applied_tags:
+			# room is hard set to be unoccupied by an admin
+			logger.info((
+				f"User [{interaction.user.global_name} ({interaction.user.name})] tried to set occupy to room [{interaction.channel.name}]. "
+				"But is denied due to tag \"occupied_admin\""
+			))
+			await interaction.response.send_message(
+				(
+					"Unable to occupy.\nReason: Room is occupied by administration.\n"
+				    "-# Please contact a server admin"
+				),
+				ephemeral=True
+			)
+			return
+
 		# check if room is already occupied
 		if is_room_occupied(thread.id):
 			await interaction.response.send_message(
@@ -140,6 +155,21 @@ class Room(commands.GroupCog):
 
 		# check if this room is already occupied
 		room_occupied = is_room_occupied(thread.id)
+
+		if self.room_status_tag_id["occupied_admin"] in thread._applied_tags:
+			# room is hard set to be unoccupied by an admin
+			logger.info((
+				f"User [{interaction.user.global_name} ({interaction.user.name})] tried to set reserve to room [{interaction.channel.name}]. "
+				"But is denied due to tag \"occupied_admin\""
+			))
+			await interaction.response.send_message(
+				(
+					"Unable to reserve.\nReason: Room is occupied by administration.\n"
+				    "-# Please contact a server admin"
+				),
+				ephemeral=True
+			)
+			return
 
 		if not room_occupied:
 			try:
