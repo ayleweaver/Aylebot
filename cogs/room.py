@@ -46,9 +46,12 @@ class Room(commands.GroupCog):
 		logger.info(f"[{interaction.channel.name}] status cleared by {interaction.user.global_name} ({interaction.user.name})")
 
 		room_type = list(set(list(self.room_type_tag_id.values())) & set(thread._applied_tags))
+
+		has_admin_occupied_tag = self.room_status_tag_id['occupied_admin'] in thread._applied_tags
+
 		await thread.override_tags(
 			channel.get_tag(room_type[0]),
-			channel.get_tag(self.room_status_tag_id['available']),
+			channel.get_tag(self.room_status_tag_id['available']) if not has_admin_occupied_tag else channel.get_tag(self.room_status_tag_id['occupied_admin']),
 			reason="Guest Check In"
 		)
 		msg = thread.history()
